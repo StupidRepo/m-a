@@ -37,4 +37,7 @@
     <string name="time_am">AM</string>
     <string name="time_pm">PM</string>
     <string name="grant_notifications_permission">Zezwól na dostęp do powiadomień</string>
+    <string name="set_an_alarm">Ustaw alarm</string>
+    <string name="set_a_timer">Ustaw minutnik</string>
+    <string name="field_hours">Godziny</string>
 </resources>
