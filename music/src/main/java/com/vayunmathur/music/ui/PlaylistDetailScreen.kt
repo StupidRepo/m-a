@@ -47,6 +47,7 @@ fun PlaylistDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseView
 
     val context = LocalContext.current
     val playbackManager = remember { PlaybackManager.getInstance(context) }
+    val currentMediaItem by playbackManager.currentMediaItem.collectAsState()
 
     Scaffold(
         topBar = {
@@ -176,7 +177,17 @@ fun PlaylistDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseView
                         IconClose()
                     }
                 }, leadingContent = {
-                    AlbumArt(music.uri.toUri(), Modifier.size(48.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (currentMediaItem?.mediaId == music.id.toString()) {
+                            Icon(
+                                painter = painterResource(com.vayunmathur.library.R.drawable.outline_play_arrow_24),
+                                contentDescription = "Playing",
+                                modifier = Modifier.size(24.dp).padding(end = 8.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        AlbumArt(music.uri.toUri(), Modifier.size(48.dp))
+                    }
                 })
             }
         }

@@ -54,6 +54,7 @@ fun AlbumDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewMod
 
     val context = LocalContext.current
     val playbackManager = remember { PlaybackManager.getInstance(context) }
+    val currentMediaItem by playbackManager.currentMediaItem.collectAsState()
 
     Scaffold(
         topBar = {
@@ -159,13 +160,24 @@ fun AlbumDetailScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewMod
                         AddToPlaylistButton(backStack, music)
                     }
                 }, leadingContent = {Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = music.trackNumber.toString(),
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 16.sp,
-                        modifier = Modifier.width(28.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
+                    if (currentMediaItem?.mediaId == music.id.toString()) {
+                        Box(Modifier.width(28.dp), contentAlignment = Alignment.Center) {
+                            Icon(
+                                painter = painterResource(com.vayunmathur.library.R.drawable.outline_play_arrow_24),
+                                contentDescription = "Playing",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = music.trackNumber.toString(),
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 16.sp,
+                            modifier = Modifier.width(28.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
 
                     Spacer(modifier = Modifier.width(8.dp))
 

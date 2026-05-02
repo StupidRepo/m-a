@@ -70,6 +70,8 @@ fun HomeScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
             BottomBarItem(stringResource(R.string.nav_playlists), Route.Playlists, R.drawable.baseline_library_music_24),
         ), Route.Home)
     }) { paddingValues ->
+        val currentMediaItem by playbackManager.currentMediaItem.collectAsState()
+
         Box(Modifier.padding(paddingValues).consumeWindowInsets(paddingValues)) {
             ListPage<Music, Route, Route.Song>(backStack, viewModel, stringResource(R.string.page_title_music), { Text(it.title) }, {
                 Text(it.artist)
@@ -79,8 +81,19 @@ fun HomeScreen(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
                 playbackManager.playSong(allSongs, toPlayIndex)
                 Route.Song
             }, leadingContent = { music ->
-                AlbumArt(music.uri.toUri(), Modifier.size(40.dp))
-            }, trailingContent = { music ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (currentMediaItem?.mediaId == music.id.toString()) {
+                        Icon(
+                            painter = painterResource(com.vayunmathur.library.R.drawable.outline_play_arrow_24),
+                            contentDescription = "Playing",
+                            modifier = Modifier.size(24.dp).padding(end = 8.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    AlbumArt(music.uri.toUri(), Modifier.size(40.dp))
+                }
+            }, trailingContent = {
+music ->
                 AddToPlaylistButton(backStack, music)
             }, searchEnabled = true, bottomBar = {
                 PlayingBottomBar(playbackManager, backStack)
