@@ -78,8 +78,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import com.vayunmathur.games.wordmaker.util.Dictionary
@@ -582,7 +584,32 @@ fun LetterChooser(
     var dragStartOffset by remember(letters) { mutableStateOf(Offset.Zero) }
     var currentDragPosition by remember(letters) { mutableStateOf<Offset?>(null) }
 
-    val letterCircleRadius = with(LocalDensity.current) { 30.dp.toPx() }
+    val density = LocalDensity.current
+    val letterCircleRadius = with(density) { 35.dp.toPx() }
+    val boxSizePx = with(density) { 250.dp.toPx() }
+    val boxCenter = Offset(boxSizePx / 2, boxSizePx / 2)
+    val minRadius = with(density) { 30.dp.toPx() }
+
+    fun getLetterAtArc(position: Offset): Int? {
+        val relative = position - boxCenter
+
+        val angle = atan2(relative.y, relative.x)
+        var normalizedAngle = angle + Math.PI / 2
+        while (normalizedAngle < 0) normalizedAngle += 2 * Math.PI
+        while (normalizedAngle >= 2 * Math.PI) normalizedAngle -= 2 * Math.PI
+
+        return (normalizedAngle / angleStep).roundToInt() % letters.size
+    }
+
+    fun getLetterAtCircle(position: Offset): Int? {
+        for (i in letterCenters.indices) {
+            val center = letterCenters[i]
+            if (distance(position, center) <= letterCircleRadius) {
+                return i
+            }
+        }
+        return null
+    }
 
     // wordShakeTranslation is provided from parent (WordGameScreen) and driven there
 
@@ -614,23 +641,17 @@ fun LetterChooser(
                     detectDragGestures(
                         onDragStart = { startOffset ->
                             currentDragPosition = startOffset
-                            letterCenters.forEachIndexed { idx, center ->
-                                if (distance(startOffset, center) < letterCircleRadius) {
-                                    if (idx !in selectedLettersIndices) {
-                                        selectedLettersIndices += idx
-                                    }
-                                }
+                            getLetterAtArc(startOffset)?.let { idx ->
+                                selectedLettersIndices = listOf(idx)
                             }
                         },
                         onDrag = { change, _ ->
                             currentDragPosition = change.position
-                            letterCenters.forEachIndexed { idx, center ->
-                                if (distance(change.position, center) < letterCircleRadius) {
-                                    if (idx !in selectedLettersIndices) {
-                                        selectedLettersIndices += idx
-                                    } else if (selectedLettersIndices.size > 1 && idx == selectedLettersIndices[selectedLettersIndices.size - 2]) {
-                                        selectedLettersIndices = selectedLettersIndices.dropLast(1)
-                                    }
+                            getLetterAtCircle(change.position)?.let { idx ->
+                                if (idx !in selectedLettersIndices) {
+                                    selectedLettersIndices = selectedLettersIndices + idx
+                                } else if (selectedLettersIndices.size > 1 && idx == selectedLettersIndices[selectedLettersIndices.size - 2]) {
+                                    selectedLettersIndices = selectedLettersIndices.dropLast(1)
                                 }
                             }
                         },
@@ -696,7 +717,7 @@ fun LetterChooser(
                     }
                     , CircleShape,
                     if (index in selectedLettersIndices) colorScheme.primary else colorScheme.secondary,
-                    letter.toString(), Modifier.padding(1.dp), FontWeight.Bold, 36.sp, 60.dp)
+                    letter.toString(), Modifier.padding(1.dp), FontWeight.Bold, 42.sp, 70.dp)
             }
         }
     }
