@@ -1,7 +1,9 @@
 package com.vayunmathur.library.ui
 
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -19,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -29,10 +33,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -148,7 +154,7 @@ inline fun <reified T : DatabaseItem, Route : NavKey, reified EditPage : Route> 
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 inline fun <reified T : ReorderableDatabaseItem<T>, Route : NavKey, reified EditPage : Route> ListPageR(
     backStack: NavBackStack<Route>,
@@ -160,6 +166,7 @@ inline fun <reified T : ReorderableDatabaseItem<T>, Route : NavKey, reified Edit
     crossinline editPage: () -> Route,
     settingsPage: Route? = null,
     crossinline otherActions: @Composable () -> Unit = {},
+    noinline selectionActions: @Composable (selectedItems: List<T>, clearSelection: () -> Unit) -> Unit = { _, _ -> },
     crossinline leadingContent: @Composable (T) -> Unit = {},
     crossinline trailingContent: @Composable (T) -> Unit = {},
     searchEnabled: Boolean = false,
@@ -171,41 +178,70 @@ inline fun <reified T : ReorderableDatabaseItem<T>, Route : NavKey, reified Edit
 
     val hapticFeedback = LocalHapticFeedback.current
 
+    val selectedIds = remember { mutableStateListOf<Long>() }
+    val isSelectionMode by remember { derivedStateOf { selectedIds.isNotEmpty() } }
+
     // 1. Initialize the reorderable state
     val listState = rememberLazyListState()
     var localData by remember { mutableStateOf(dbData) }
 
+    val selectedIndices by remember { derivedStateOf {
+        localData.mapIndexedNotNull { index, item ->
+            if (item.id in selectedIds) index else null
+        }
+    } }
+    val isContiguous by remember { derivedStateOf {
+        selectedIndices.isEmpty() || selectedIndices.size == 1 || (selectedIndices.last() - selectedIndices.first() == selectedIndices.size - 1)
+    } }
+
     val state = rememberReorderableLazyListState(listState, onMove = { from, to ->
-        // 1. Normalize UI indices to 0-based Data indices
-        // If search is on, UI says "1" but we need "0".
-        val fromIdx = if (searchEnabled) from.index - 1 else from.index
-        val toIdx = if (searchEnabled) to.index - 1 else to.index
+        val fromIdx = from.index
+        val toIdx = to.index
 
-        // 2. Safety Bounds Check
         if (fromIdx in localData.indices && toIdx in localData.indices) {
-
-            // 3. Find the neighbors to calculate the new fractional position.
-            // If moving DOWN: target is at toIdx, neighbor above is also toIdx (since item will drop AFTER it).
-            // If moving UP: target is at toIdx, neighbor above is toIdx - 1.
-            val prevIdx = if (toIdx > fromIdx) toIdx else toIdx - 1
-            val nextIdx = if (toIdx > fromIdx) toIdx + 1 else toIdx
-
-            val prevPos = localData.getOrNull(prevIdx)?.position
-            val nextPos = localData.getOrNull(nextIdx)?.position
-
-            // 4. Calculate the midpoint
-            val resultItemPosition = when {
-                prevPos == null -> (nextPos ?: 0.0) - 50.0
-                nextPos == null -> prevPos + 50.0
-                else -> (prevPos + nextPos) / 2.0
-            }
-
-            // 5. Atomic Update: Create new list, move item, and update state
             val mutableList = localData.toMutableList()
-            val movedItem = mutableList.removeAt(fromIdx).withPosition(resultItemPosition)
-            mutableList.add(toIdx, movedItem)
+            val draggedItem = localData[fromIdx]
 
-            localData = mutableList
+            if (isSelectionMode && isContiguous && draggedItem.id in selectedIds) {
+                // Group move
+                val selectedInOrder = selectedIndices.map { localData[it] }
+                mutableList.removeAll { it.id in selectedIds }
+
+                val targetItem = localData[toIdx]
+                var insertIdx = mutableList.indexOfFirst { it.id == targetItem.id }
+                if (insertIdx == -1) insertIdx = 0
+                if (toIdx > fromIdx) insertIdx++
+
+                val prevPos = mutableList.getOrNull(insertIdx - 1)?.position
+                val nextPos = mutableList.getOrNull(insertIdx)?.position
+
+                val startPos = prevPos ?: ((nextPos ?: 0.0) - 100.0)
+                val endPos = nextPos ?: (startPos + 100.0)
+                val step = (endPos - startPos) / (selectedInOrder.size + 1)
+
+                val movedItems = selectedInOrder.mapIndexed { index, item ->
+                    item.withPosition(startPos + step * (index + 1))
+                }
+                mutableList.addAll(insertIdx, movedItems)
+                localData = mutableList
+            } else if (!isSelectionMode) {
+                // Revert to single item move (previous state)
+                val prevIdx = if (toIdx > fromIdx) toIdx else toIdx - 1
+                val nextIdx = if (toIdx > fromIdx) toIdx + 1 else toIdx
+
+                val prevPos = localData.getOrNull(prevIdx)?.position
+                val nextPos = localData.getOrNull(nextIdx)?.position
+
+                val resultItemPosition = when {
+                    prevPos == null -> (nextPos ?: 0.0) - 50.0
+                    nextPos == null -> prevPos + 50.0
+                    else -> (prevPos + nextPos) / 2.0
+                }
+
+                val movedItem = mutableList.removeAt(fromIdx).withPosition(resultItemPosition)
+                mutableList.add(toIdx, movedItem)
+                localData = mutableList
+            }
 
             hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
         }
@@ -228,17 +264,33 @@ inline fun <reified T : ReorderableDatabaseItem<T>, Route : NavKey, reified Edit
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text(title) }, actions = {
-                otherActions()
-                settingsPage?.let { settingsPage ->
-                    IconButton(onClick = { backStack.add(settingsPage) }) {
-                        IconSettings()
+            if (isSelectionMode) {
+                TopAppBar(
+                    title = { Text(selectedIds.size.toString()) },
+                    navigationIcon = {
+                        IconButton(onClick = { selectedIds.clear() }) {
+                            IconClose()
+                        }
+                    },
+                    actions = {
+                        selectionActions(localData.filter { it.id in selectedIds }) {
+                            selectedIds.clear()
+                        }
                     }
-                }
-            })
+                )
+            } else {
+                TopAppBar(title = { Text(title) }, actions = {
+                    otherActions()
+                    settingsPage?.let { settingsPage ->
+                        IconButton(onClick = { backStack.add(settingsPage) }) {
+                            IconSettings()
+                        }
+                    }
+                })
+            }
         },
         floatingActionButton = {
-            if (backStack.last() !is EditPage) {
+            if (backStack.last() !is EditPage && !isSelectionMode) {
                 FloatingActionButton(onClick = { backStack.add(editPage()) }) {
                     IconAdd()
                 }
@@ -277,35 +329,61 @@ inline fun <reified T : ReorderableDatabaseItem<T>, Route : NavKey, reified Edit
                     ReorderableItem(state, key = item.id) { isDragging ->
 
                         val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
+                        val isSelected = item.id in selectedIds
 
                         Surface(Modifier.animateItem(), shadowElevation = elevation) {
-                            ListItem({ headlineContent(item) }, Modifier.clickable {
-                                backStack.add(viewPage(item.id))
-                            }, {}, { supportingContent(item) }, { leadingContent(item) }, {
-                                Row {
-                                    trailingContent(item)
-                                    IconButton(
-                                        modifier = Modifier.draggableHandle(
-                                            onDragStarted = {
-                                                hapticFeedback.performHapticFeedback(
-                                                    HapticFeedbackType.GestureThresholdActivate
-                                                )
-                                            },
-                                            onDragStopped = {
-                                                hapticFeedback.performHapticFeedback(
-                                                    HapticFeedbackType.GestureEnd
-                                                )
-                                            },
-                                        ),
-                                        onClick = {},
-                                    ) {
-                                        Icon(
-                                            painterResource(R.drawable.drag_handle_24px),
-                                            contentDescription = "Reorder"
-                                        )
+                            ListItem(
+                                headlineContent = { headlineContent(item) },
+                                modifier = Modifier.combinedClickable(
+                                    onClick = {
+                                        if (isSelectionMode) {
+                                            if (isSelected) selectedIds.remove(item.id)
+                                            else selectedIds.add(item.id)
+                                        } else {
+                                            backStack.add(viewPage(item.id))
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (!isSelectionMode) {
+                                            selectedIds.add(item.id)
+                                        }
                                     }
-                                }
-                            }, ListItemDefaults.colors(), elevation, elevation)
+                                ),
+                                supportingContent = { supportingContent(item) },
+                                leadingContent = { leadingContent(item) },
+                                trailingContent = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        trailingContent(item)
+                                        if (!isSelectionMode || isContiguous) {
+                                            IconButton(
+                                                modifier = Modifier.draggableHandle(
+                                                    onDragStarted = {
+                                                        hapticFeedback.performHapticFeedback(
+                                                            HapticFeedbackType.GestureThresholdActivate
+                                                        )
+                                                    },
+                                                    onDragStopped = {
+                                                        hapticFeedback.performHapticFeedback(
+                                                            HapticFeedbackType.GestureEnd
+                                                        )
+                                                    },
+                                                ),
+                                                onClick = {},
+                                            ) {
+                                                Icon(
+                                                    painterResource(R.drawable.drag_handle_24px),
+                                                    contentDescription = "Reorder"
+                                                )
+                                            }
+                                        }
+                                    }
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                                ),
+                                tonalElevation = elevation,
+                                shadowElevation = elevation
+                            )
                         }
                     }
                 }

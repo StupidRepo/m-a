@@ -10,6 +10,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import com.vayunmathur.library.ui.IconDelete
 import com.vayunmathur.library.ui.IconUpload
 import com.vayunmathur.library.ui.BackupButtons
 import com.vayunmathur.library.util.BiometricDatabaseHelper
@@ -70,20 +71,38 @@ fun NotesListPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) 
         }
     )
 
-    ListPageR<Note, Route, Route.Note>(backStack, viewModel, "Notes", {
-        Text(it.title)
-    }, {
-        Text(it.content.substringBefore('\n').take(40))
-    }, { Route.Note(it) }, { Route.Note(0) }, searchEnabled = true, otherActions = {
-        val pass = remember { BiometricDatabaseHelper(context).getPassphrase(false) }
-        BackupButtons(
-            dbConfigs = listOf("passwords-db" to pass),
-            extraFiles = emptyList()
-        )
-        IconButton({
-            filePickerLauncher.launch(arrayOf("text/plain", "text/markdown"))
-        }) {
-            IconUpload()
+    ListPageR<Note, Route, Route.Note>(
+        backStack = backStack,
+        viewModel = viewModel,
+        title = "Notes",
+        headlineContent = {
+            Text(it.title)
+        },
+        supportingContent = {
+            Text(it.content.substringBefore('\n').take(40))
+        },
+        viewPage = { Route.Note(it) },
+        editPage = { Route.Note(0) },
+        searchEnabled = true,
+        otherActions = {
+            val pass = remember { BiometricDatabaseHelper(context).getPassphrase(false) }
+            BackupButtons(
+                dbConfigs = listOf("passwords-db" to pass),
+                extraFiles = emptyList()
+            )
+            IconButton({
+                filePickerLauncher.launch(arrayOf("text/plain", "text/markdown"))
+            }) {
+                IconUpload()
+            }
+        },
+        selectionActions = { selectedNotes, clearSelection ->
+            IconButton(onClick = {
+                selectedNotes.forEach { viewModel.delete(it) }
+                clearSelection()
+            }) {
+                IconDelete()
+            }
         }
-    })
+    )
 }
