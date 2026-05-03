@@ -46,10 +46,21 @@ import java.io.File
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotePage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, noteID: Long) {
-    var note by viewModel.getEditable<Note>(noteID) {Note(0, "", "")}
+    var note by viewModel.getEditable<Note>(noteID) { Note(0, "", "") }
+
+    if (noteID != 0L && note.id == 0L) return
+
     var isEditing by remember { mutableStateOf(true) }
 
     val context = LocalContext.current
+
+    var contentValue by remember(noteID) {
+        mutableStateOf(
+            TextFieldValue(
+                parseMarkdown(note.content, process = false, softWrap = false)
+            )
+        )
+    }
 
     Scaffold(topBar = {
         TopAppBar({ }, navigationIcon = {
@@ -58,7 +69,7 @@ fun NotePage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, noteI
             IconButton({
                 isEditing = !isEditing
             }) {
-                if(isEditing) IconVisible() else IconEdit()
+                if (isEditing) IconVisible() else IconEdit()
             }
             IconButton({
                 val fileUri = getTmpFileUri(context, note.title, note.content)
@@ -105,13 +116,6 @@ fun NotePage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, noteI
                 Spacer(Modifier.height(8.dp))
             }
             item {
-                var value by remember(note.id) {
-                    mutableStateOf(
-                        TextFieldValue(
-                            parseMarkdown(note.content, process = false, softWrap = false)
-                        )
-                    )
-                }
                 val noMarkers by remember {
                     derivedStateOf {
                         TextFieldValue(
@@ -124,10 +128,10 @@ fun NotePage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, noteI
                     }
                 }
                 BasicTextField(
-                    if (isEditing) value else noMarkers,
+                    if (isEditing) contentValue else noMarkers,
                     {
                         note = note.copy(content = it.text)
-                        value = it.copy(annotatedString = parseMarkdown(it.text, process = false, softWrap = false))
+                        contentValue = it.copy(annotatedString = parseMarkdown(it.text, process = false, softWrap = false))
                     },
                     Modifier.fillMaxSize(),
                     readOnly = !isEditing,
