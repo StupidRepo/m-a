@@ -1,26 +1,20 @@
 package com.vayunmathur.calendar.ui
 
 import android.text.format.DateFormat
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,48 +22,48 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.ListItem
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.text.style.TextOverflow
-import kotlinx.datetime.format
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -85,6 +79,7 @@ import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.util.ResultEffect
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.format.MonthNames
@@ -93,11 +88,18 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.number
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.datetime.format
+import kotlinx.datetime.todayIn
 import kotlin.time.Clock
 import kotlin.time.Instant
 
+private val monthHeaderFormat = LocalDate.Format {
+    monthName(MonthNames.ENGLISH_FULL)
+    chars(" ")
+    year()
+}
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalendarScreen(viewModel: CalendarViewModel, backStack: NavBackStack<Route>) {
     val context = LocalContext.current
@@ -112,16 +114,14 @@ fun CalendarScreen(viewModel: CalendarViewModel, backStack: NavBackStack<Route>)
     val calendarVisibility by viewModel.calendarVisibility.collectAsState()
     val currentLayout by viewModel.currentLayout.collectAsState()
 
-    val vEventsByID = events.associateBy { it.id!! }
-
-
     // compute today's date and restore last viewed date if available
     val lastViewed by viewModel.lastViewedDate.collectAsState()
     val initialDate =
         lastViewed ?: Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+    
+    // We use a stable anchor for pagers/scrollers so they don't shift bases.
+    val anchorDate = remember { initialDate }
     var dateViewing by remember { mutableStateOf(initialDate) }
-
-    // state for which week to show; 0 = current week, +1 = next week, -1 = previous week
 
     // shared vertical scroll so hour labels and grid scroll together
     val verticalState = rememberScrollState()
@@ -129,20 +129,19 @@ fun CalendarScreen(viewModel: CalendarViewModel, backStack: NavBackStack<Route>)
     ResultEffect<LocalDate>("GotoDate") { result ->
         dateViewing = result
     }
-    val visibleSunday = dateViewing - DatePeriod(days = dateViewing.dayOfWeek.isoDayNumber % 7)
 
     Scaffold(
         Modifier,
         {
             TopAppBar(
                 {
-                    // show month/year of the currently visible week's Sunday
-                    val mon = MonthNames.ENGLISH_ABBREVIATED.names[visibleSunday.month.number - 1]
+                    // show month/year of the currently visible date
+                    val mon = MonthNames.ENGLISH_ABBREVIATED.names[dateViewing.month.number - 1]
                     Row(
                         Modifier.clickable { backStack.add(Route.Calendar.GotoDialog(dateViewing)) },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(stringResource(R.string.month_year_format, mon, visibleSunday.year), fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.month_year_format, mon, dateViewing.year), fontWeight = FontWeight.Bold)
                         Icon(painterResource(R.drawable.arrow_drop_down_24px), null)
                     }
                 }, actions = {
@@ -185,53 +184,32 @@ fun CalendarScreen(viewModel: CalendarViewModel, backStack: NavBackStack<Route>)
     ) { innerPadding ->
         Column(Modifier.padding(innerPadding).fillMaxSize()) {
             when (currentLayout) {
-                CalendarViewModel.CalendarLayout.Agenda -> AgendaView(context, events, calendars, calendarVisibility, dateViewing, onEventClick = {
+                CalendarViewModel.CalendarLayout.Agenda -> AgendaView(context, events, calendars, calendarVisibility, anchorDate, dateViewing, onEventClick = {
                     viewModel.setLastViewedDate(dateViewing)
                     backStack.add(Route.Event(it))
-                })
-                CalendarViewModel.CalendarLayout.Month -> MonthView(context, events, calendars, calendarVisibility, dateViewing, onEventClick = {
+                }, onDateViewingChanged = { dateViewing = it })
+                CalendarViewModel.CalendarLayout.Month -> MonthView(context, events, calendars, calendarVisibility, anchorDate, dateViewing, onEventClick = {
                     viewModel.setLastViewedDate(dateViewing)
                     backStack.add(Route.Event(it))
                 }, onDayClick = {
                     dateViewing = it
-                    viewModel.setLayout(CalendarViewModel.CalendarLayout.Day)
-                }, onSwipe = {
-                    dateViewing = if (it > 0) dateViewing.minus(DatePeriod(months = 1)) else dateViewing.plus(DatePeriod(months = 1))
-                })
-                CalendarViewModel.CalendarLayout.WorkWeekSummary, CalendarViewModel.CalendarLayout.FullWeekSummary -> {
-                    val daysToShow = if (currentLayout == CalendarViewModel.CalendarLayout.WorkWeekSummary) 5 else 7
-                    val startDay = if (daysToShow == 5) {
-                        dateViewing - DatePeriod(days = (dateViewing.dayOfWeek.isoDayNumber - 1) % 7)
-                    } else visibleSunday
-                    
-                    SummaryView(context, events, calendars, calendarVisibility, startDay, daysToShow, onEventClick = {
-                        viewModel.setLastViewedDate(dateViewing)
-                        backStack.add(Route.Event(it))
-                    }, onSwipe = {
-                        val period = if (daysToShow == 5) DatePeriod(days = 7) else DatePeriod(days = 7)
-                        dateViewing = if (it > 0) dateViewing.minus(period) else dateViewing.plus(period)
-                    })
-                }
+                }, onDateViewingChanged = { dateViewing = it })
                 else -> {
-                    // Hourly views (Day, WorkWeek, FullWeek)
-                    val daysToShow = when (currentLayout) {
-                        CalendarViewModel.CalendarLayout.Day -> 1
-                        CalendarViewModel.CalendarLayout.WorkWeek -> 5
-                        else -> 7
-                    }
-                    val startDay = when (currentLayout) {
-                        CalendarViewModel.CalendarLayout.Day -> dateViewing
-                        CalendarViewModel.CalendarLayout.WorkWeek -> dateViewing - DatePeriod(days = (dateViewing.dayOfWeek.isoDayNumber - 1) % 7)
-                        else -> visibleSunday
-                    }
-
-                    HourlyCalendarView(context, events, calendars, calendarVisibility, startDay, daysToShow, verticalState, onEventClick = {
-                        viewModel.setLastViewedDate(dateViewing)
-                        backStack.add(Route.Event(it))
-                    }, onSwipe = {
-                        val period = if (daysToShow == 1) DatePeriod(days = 1) else DatePeriod(days = 7)
-                        dateViewing = if (it > 0) dateViewing.minus(period) else dateViewing.plus(period)
-                    })
+                    CalendarPagerView(
+                        context,
+                        currentLayout,
+                        anchorDate,
+                        dateViewing,
+                        events,
+                        calendars,
+                        calendarVisibility,
+                        verticalState,
+                        onEventClick = {
+                            viewModel.setLastViewedDate(dateViewing)
+                            backStack.add(Route.Event(it))
+                        },
+                        onDateViewingChanged = { dateViewing = it }
+                    )
                 }
             }
         }
@@ -239,154 +217,214 @@ fun CalendarScreen(viewModel: CalendarViewModel, backStack: NavBackStack<Route>)
 }
 
 @Composable
-fun HourlyCalendarView(
+fun CalendarPagerView(
     context: android.content.Context,
+    currentLayout: CalendarViewModel.CalendarLayout,
+    anchorDate: LocalDate,
+    dateViewing: LocalDate,
     events: List<Event>,
     calendars: Map<Long, Calendar>,
     calendarVisibility: Map<Long, Boolean>,
-    startDay: LocalDate,
-    daysToShow: Int,
     verticalState: ScrollState,
     onEventClick: (Instance) -> Unit,
-    onSwipe: (Float) -> Unit
+    onDateViewingChanged: (LocalDate) -> Unit
 ) {
-    val vEventsByID = events.associateBy { it.id!! }
-    val weekDays = (0 until daysToShow).map { startDay.plus(DatePeriod(days = it)) }
-
-    val weekInstances = Instance.getInstances(
-        context,
-        weekDays.first().atStartOfDayIn(TimeZone.currentSystemDefault()),
-        weekDays.last().atEndOfDayIn(TimeZone.currentSystemDefault())
-    )
-        .filter { it.eventID in vEventsByID }
-        .filter { calendarVisibility[vEventsByID[it.eventID]!!.calendarID] ?: true }
-
-    val (allDay, notAllDay) = weekInstances.partition { it.allDay }
-
-    val allDayByDate: Map<LocalDate, List<Instance>> = weekDays.associateWith { d ->
-        allDay.filter { instance -> d in instance.spanDays }
+    val daysToShow = when (currentLayout) {
+        CalendarViewModel.CalendarLayout.Day -> 1
+        CalendarViewModel.CalendarLayout.WorkWeek, CalendarViewModel.CalendarLayout.WorkWeekSummary -> 5
+        else -> 7
+    }
+    val isSummary = currentLayout == CalendarViewModel.CalendarLayout.WorkWeekSummary || 
+                    currentLayout == CalendarViewModel.CalendarLayout.FullWeekSummary
+    
+    val pagerState = rememberPagerState(initialPage = 5000) { 10000 }
+    
+    LaunchedEffect(pagerState.currentPage, currentLayout) {
+        val delta = pagerState.currentPage - 5000
+        val currentStart = if (daysToShow == 1) {
+            anchorDate.plus(DatePeriod(days = delta))
+        } else {
+            anchorDate.plus(DatePeriod(days = delta * 7))
+        }
+        onDateViewingChanged(currentStart)
     }
 
-    val timedByDateHour: Map<LocalDate, Map<Int, List<Instance>>> =
-        weekDays.associateWith { d ->
-            val timed = notAllDay.filter { instance -> d in instance.spanDays }
-            timed.groupBy { ev ->
-                ev.startDateTime.hour
+    LaunchedEffect(dateViewing) {
+        if (!pagerState.isScrollInProgress) {
+            val delta = if (daysToShow == 1) {
+                dateViewing.toEpochDays() - anchorDate.toEpochDays()
+            } else {
+                (dateViewing.toEpochDays() - anchorDate.toEpochDays()) / 7
+            }
+            val targetPage = 5000 + delta.toInt()
+            if (pagerState.currentPage != targetPage) {
+                pagerState.scrollToPage(targetPage)
             }
         }
+    }
 
-    Row(
-        Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                var dragTotal = 0f
-                detectHorizontalDragGestures({}, {
-                    val threshold = 100f
-                    if (kotlin.math.abs(dragTotal) >= threshold) {
-                        onSwipe(dragTotal)
-                    }
-                    dragTotal = 0f
-                }, { dragTotal = 0f }, { change, delta ->
-                    dragTotal += delta
-                    change.consume()
-                })
-            }
-    ) {
+    Row(Modifier.fillMaxSize()) {
         var yOffset by remember { mutableStateOf(0.dp) }
         val density = LocalDensity.current
 
-        // Hour labels column
-        Column {
-            Spacer(Modifier.height(yOffset))
-            Column(
-                Modifier
-                    .verticalScroll(verticalState)
-                    .padding(bottom = 16.dp)
-            ) {
-                for (hour in 0..23) {
-                    Box(modifier = Modifier
-                        .height(56.dp)
-                        .width(56.dp)) {
-                        val hourString = if(DateFormat.is24HourFormat(context)) {
-                            "%02d:00".format(hour)
-                        } else {
-                            if (hour == 0) context.getString(R.string.twelve_am) else if (hour < 12) context.getString(R.string.hour_am, hour) else if (hour == 12) context.getString(R.string.twelve_pm) else context.getString(R.string.hour_pm, hour - 12)
+        if (!isSummary) {
+            // Static Hour labels column
+            Column {
+                Spacer(Modifier.height(yOffset))
+                Column(
+                    Modifier
+                        .verticalScroll(verticalState)
+                        .padding(bottom = 16.dp)
+                ) {
+                    for (hour in 0..23) {
+                        Box(modifier = Modifier
+                            .height(56.dp)
+                            .width(56.dp)) {
+                            val hourString = if(DateFormat.is24HourFormat(context)) {
+                                "%02d:00".format(hour)
+                            } else {
+                                if (hour == 0) context.getString(R.string.twelve_am) else if (hour < 12) context.getString(R.string.hour_am, hour) else if (hour == 12) context.getString(R.string.twelve_pm) else context.getString(R.string.hour_pm, hour - 12)
+                            }
+                            Text(
+                                text = hourString,
+                                modifier = Modifier.padding(start = 8.dp),
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         }
-                        Text(
-                            text = hourString,
-                            modifier = Modifier.padding(start = 8.dp),
-                            style = MaterialTheme.typography.labelSmall
-                        )
                     }
                 }
             }
         }
 
-        Column(Modifier.fillMaxSize()) {
-            WeekHeader(weekDays)
-            AllDayRow(allDayByDate, vEventsByID, calendars, weekDays, onEventClick)
-            Spacer(Modifier.onGloballyPositioned {
-                yOffset = with(density) { it.positionInParent().y.toDp() }
-            })
-            HourlyGrid(
-                timedByDateHour,
-                weekDays,
-                verticalState,
-                onEventClick,
-                PaddingValues(0.dp)
-            )
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f),
+            beyondViewportPageCount = 1
+        ) { page ->
+            val delta = page - 5000
+            val pageStartDate = if (daysToShow == 1) {
+                anchorDate.plus(DatePeriod(days = delta))
+            } else {
+                anchorDate.plus(DatePeriod(days = delta * 7))
+            }
+            
+            val startDay = when (currentLayout) {
+                CalendarViewModel.CalendarLayout.Day -> pageStartDate
+                CalendarViewModel.CalendarLayout.WorkWeek, CalendarViewModel.CalendarLayout.WorkWeekSummary -> 
+                    pageStartDate.minus(DatePeriod(days = (pageStartDate.dayOfWeek.isoDayNumber - 1) % 7))
+                else -> pageStartDate.minus(DatePeriod(days = pageStartDate.dayOfWeek.isoDayNumber % 7))
+            }
+            
+            val weekDays = (0 until daysToShow).map { startDay.plus(DatePeriod(days = it)) }
+            val vEventsByID = remember(events) { events.associateBy { it.id!! } }
+
+            val weekInstances = remember(events, calendarVisibility, startDay, daysToShow) {
+                Instance.getInstances(
+                    context,
+                    weekDays.first().atStartOfDayIn(TimeZone.currentSystemDefault()),
+                    weekDays.last().atEndOfDayIn(TimeZone.currentSystemDefault())
+                )
+                    .filter { it.eventID in vEventsByID }
+                    .filter { calendarVisibility[vEventsByID[it.eventID]!!.calendarID] ?: true }
+            }
+
+            Column(Modifier.fillMaxSize()) {
+                WeekHeader(weekDays)
+                
+                if (isSummary) {
+                    SummaryGrid(context, weekInstances, vEventsByID, calendars, weekDays, onEventClick)
+                } else {
+                    val (allDay, notAllDay) = weekInstances.partition { it.allDay }
+                    val allDayByDate = weekDays.associateWith { d -> allDay.filter { d in it.spanDays } }
+                    val timedByDateHour = weekDays.associateWith { d ->
+                        notAllDay.filter { d in it.spanDays }.groupBy { it.startDateTime.hour }
+                    }
+
+                    AllDayRow(allDayByDate, vEventsByID, calendars, weekDays, onEventClick)
+                    Spacer(Modifier.onGloballyPositioned {
+                        if (page == pagerState.currentPage) {
+                            yOffset = with(density) { it.positionInParent().y.toDp() }
+                        }
+                    })
+                    HourlyGrid(
+                        timedByDateHour,
+                        weekDays,
+                        verticalState,
+                        onEventClick,
+                        PaddingValues(0.dp)
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-fun AgendaView(
+fun SummaryGrid(
     context: android.content.Context,
-    events: List<Event>,
+    instances: List<Instance>,
+    vEventsByID: Map<Long, Event>,
     calendars: Map<Long, Calendar>,
-    calendarVisibility: Map<Long, Boolean>,
-    startDate: LocalDate,
+    weekDays: List<LocalDate>,
     onEventClick: (Instance) -> Unit
 ) {
-    val vEventsByID = events.associateBy { it.id!! }
-    val endDate = startDate.plus(DatePeriod(months = 1))
-    
-    val instances = remember(events, calendarVisibility, startDate) {
-        Instance.getInstances(
-            context,
-            startDate.atStartOfDayIn(TimeZone.currentSystemDefault()),
-            endDate.atEndOfDayIn(TimeZone.currentSystemDefault())
-        )
-            .filter { it.eventID in vEventsByID }
-            .filter { calendarVisibility[vEventsByID[it.eventID]!!.calendarID] ?: true }
-            .sortedBy { it.startDateTime }
-    }
-
-    val groupedInstances = remember(instances) {
-        instances.groupBy { it.startDateTime.date }
-    }
-
-    LazyColumn(Modifier.fillMaxSize()) {
-        groupedInstances.forEach { (date, dayInstances) ->
-            item {
-                Text(
-                    text = date.format(dateFormat),
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
+    Row(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 8.dp)
+    ) {
+        weekDays.forEachIndexed { index, day ->
+            val dayInstances = instances.filter { day in it.spanDays }.sortedBy { it.startDateTime }
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(2.dp)
+            ) {
+                dayInstances.forEach { instance ->
+                    val ev = vEventsByID[instance.eventID]!!
+                    SummaryEventItem(context, instance, ev, calendars, onEventClick)
+                }
             }
-            items(dayInstances) { instance ->
-                val ev = vEventsByID[instance.eventID]!!
-                ListItem(
-                    headlineContent = { Text(ev.title.ifEmpty { context.getString(R.string.no_title) }) },
-                    supportingContent = {
-                        Text(dateRangeString(context, instance.startDateTimeDisplay.date, instance.endDateTimeDisplay.date, instance.startDateTimeDisplay.time, instance.endDateTimeDisplay.time, instance.allDay))
-                    },
-                    leadingContent = {
-                        Box(Modifier.size(16.dp).background(Color(ev.color ?: calendars[ev.calendarID]!!.color), CircleShape))
-                    },
-                    modifier = Modifier.clickable { onEventClick(instance) }
+            if (index < weekDays.size - 1) {
+                VerticalDivider(color = Color.DarkGray.copy(alpha = 0.5f), modifier = Modifier.fillMaxHeight())
+            }
+        }
+    }
+}
+
+@Composable
+fun SummaryEventItem(
+    context: android.content.Context,
+    instance: Instance,
+    ev: Event,
+    calendars: Map<Long, Calendar>,
+    onEventClick: (Instance) -> Unit
+) {
+    Box(
+        Modifier
+            .padding(bottom = 2.dp)
+            .background(Color(ev.color ?: calendars[ev.calendarID]!!.color), RoundedCornerShape(4.dp))
+            .fillMaxWidth()
+            .clickable { onEventClick(instance) }
+            .padding(4.dp)
+    ) {
+        Column {
+            Text(
+                ev.title.ifEmpty { context.getString(R.string.no_title) },
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 12.sp
+            )
+            if (!instance.allDay) {
+                val timeFmt = if(DateFormat.is24HourFormat(context)) timeFormat24 else timeFormat12
+                Text(
+                    "${instance.startDateTime.time.format(timeFmt)} - ${instance.endDateTime.time.format(timeFmt)}",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 9.sp,
+                    lineHeight = 10.sp
                 )
             }
         }
@@ -399,85 +437,111 @@ fun MonthView(
     events: List<Event>,
     calendars: Map<Long, Calendar>,
     calendarVisibility: Map<Long, Boolean>,
+    anchorDate: LocalDate,
     dateViewing: LocalDate,
     onEventClick: (Instance) -> Unit,
     onDayClick: (LocalDate) -> Unit,
-    onSwipe: (Float) -> Unit
+    onDateViewingChanged: (LocalDate) -> Unit
 ) {
-    val firstOfMonth = LocalDate(dateViewing.year, dateViewing.month, 1)
-    val lastOfMonth = firstOfMonth.plus(DatePeriod(months = 1)).minus(DatePeriod(days = 1))
-    val startDay = firstOfMonth - DatePeriod(days = firstOfMonth.dayOfWeek.isoDayNumber % 7)
-    val endDay = lastOfMonth + DatePeriod(days = (6 - lastOfMonth.dayOfWeek.isoDayNumber % 7))
-
-    val instances = remember(events, calendarVisibility, startDay, endDay) {
-        val vEventsByID = events.associateBy { it.id!! }
-        Instance.getInstances(
-            context,
-            startDay.atStartOfDayIn(TimeZone.currentSystemDefault()),
-            endDay.atEndOfDayIn(TimeZone.currentSystemDefault())
-        )
-            .filter { it.eventID in vEventsByID }
-            .filter { calendarVisibility[vEventsByID[it.eventID]!!.calendarID] ?: true }
+    val pagerState = rememberPagerState(initialPage = 5000) { 10000 }
+    
+    LaunchedEffect(pagerState.currentPage) {
+        val monthDate = anchorDate.plus(DatePeriod(months = pagerState.currentPage - 5000))
+        onDateViewingChanged(monthDate)
     }
 
-    Column(Modifier.fillMaxSize().pointerInput(Unit) {
-        var dragTotal = 0f
-        detectHorizontalDragGestures({}, {
-            if (kotlin.math.abs(dragTotal) >= 100f) onSwipe(dragTotal)
-            dragTotal = 0f
-        }, { dragTotal = 0f }, { change, delta ->
-            dragTotal += delta
-            change.consume()
-        })
-    }) {
-        Row(Modifier.fillMaxWidth()) {
-            listOf("S", "M", "T", "W", "T", "F", "S").forEach { day ->
-                Text(day, Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center, style = MaterialTheme.typography.labelSmall)
+    LaunchedEffect(dateViewing) {
+        if (!pagerState.isScrollInProgress) {
+            val monthsDiff = (dateViewing.year * 12 + dateViewing.month.number) - (anchorDate.year * 12 + anchorDate.month.number)
+            val targetPage = 5000 + monthsDiff
+            if (pagerState.currentPage != targetPage) {
+                pagerState.scrollToPage(targetPage)
             }
         }
-        
-        var current = startDay
-        while (current <= endDay) {
-            Row(Modifier.weight(1f)) {
-                for (i in 0..6) {
-                    val day = current
-                    val isCurrentMonth = day.month == dateViewing.month
-                    val dayInstances = instances.filter { day in it.spanDays }
+    }
 
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .border(0.5.dp, Color.DarkGray)
-                            .background(if (isCurrentMonth) Color.Transparent else Color.Black.copy(alpha = 0.1f))
-                            .clickable { onDayClick(day) }
-                            .padding(2.dp)
-                    ) {
-                        Text(
-                            day.day.toString(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isCurrentMonth) Color.White else Color.Gray
-                        )
-                        dayInstances.take(3).forEach { instance ->
-                            val ev = events.find { it.id == instance.eventID } ?: return@forEach
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 1.dp)
-                                    .background(Color(ev.color ?: calendars[ev.calendarID]!!.color), RoundedCornerShape(2.dp))
-                                    .padding(horizontal = 2.dp, vertical = 0.dp)
-                            ) {
-                                Text(
-                                    ev.title.ifEmpty { context.getString(R.string.no_title) },
-                                    color = Color.White,
-                                    fontSize = 8.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                    current = current.plus(DatePeriod(days = 1))
+    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+        val monthDate = anchorDate.plus(DatePeriod(months = page - 5000))
+        val firstOfMonth = LocalDate(monthDate.year, monthDate.month, 1)
+        val lastOfMonth = firstOfMonth.plus(DatePeriod(months = 1)).minus(DatePeriod(days = 1))
+        val startDay = firstOfMonth.minus(DatePeriod(days = firstOfMonth.dayOfWeek.isoDayNumber % 7))
+        val endDay = lastOfMonth.plus(DatePeriod(days = (6 - lastOfMonth.dayOfWeek.isoDayNumber % 7)))
+        
+        val weeks = mutableListOf<LocalDate>()
+        var curr = startDay
+        while (curr <= endDay) {
+            weeks.add(curr)
+            curr = curr.plus(DatePeriod(days = 7))
+        }
+
+        val vEventsByID = remember(events) { events.associateBy { it.id!! } }
+        val monthInstances = remember(events, calendarVisibility, startDay, endDay) {
+            Instance.getInstances(
+                context,
+                startDay.atStartOfDayIn(TimeZone.currentSystemDefault()),
+                endDay.atEndOfDayIn(TimeZone.currentSystemDefault())
+            )
+                .filter { it.eventID in vEventsByID }
+                .filter { calendarVisibility[vEventsByID[it.eventID]!!.calendarID] ?: true }
+        }
+
+        Column(Modifier.fillMaxSize()) {
+            weeks.forEach { weekSunday ->
+                MonthWeekRow(
+                    Modifier.weight(1f),
+                    weekSunday,
+                    vEventsByID,
+                    calendars,
+                    calendarVisibility,
+                    onEventClick,
+                    onDayClick,
+                    context,
+                    monthDate.month.number,
+                    monthInstances
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun MonthWeekRow(
+    modifier: Modifier,
+    weekSunday: LocalDate,
+    vEventsByID: Map<Long, Event>,
+    calendars: Map<Long, Calendar>,
+    calendarVisibility: Map<Long, Boolean>,
+    onEventClick: (Instance) -> Unit,
+    onDayClick: (LocalDate) -> Unit,
+    context: android.content.Context,
+    viewingMonth: Int,
+    allInstances: List<Instance>
+) {
+    val weekDays = (0..6).map { weekSunday.plus(DatePeriod(days = it)) }
+
+    Row(modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        weekDays.forEach { date ->
+            val dayInstances = allInstances.filter { date in it.spanDays }.sortedBy { it.startDateTime }
+            val isToday = date == Clock.System.todayIn(TimeZone.currentSystemDefault())
+            val isPartOfViewingMonth = date.month.number == viewingMonth
+            
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .border(0.5.dp, Color.DarkGray)
+                    .clickable { onDayClick(date) }
+                    .padding(2.dp)
+            ) {
+                Text(
+                    text = date.day.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isToday) MaterialTheme.colorScheme.primary else if (isPartOfViewingMonth) MaterialTheme.colorScheme.primary else Color.Gray,
+                    fontWeight = if (isToday || isPartOfViewingMonth) FontWeight.Bold else FontWeight.Normal
+                )
+                dayInstances.forEach { instance ->
+                    val ev = vEventsByID[instance.eventID]!!
+                    SummaryEventItem(context, instance, ev, calendars, onEventClick)
                 }
             }
         }
@@ -485,70 +549,73 @@ fun MonthView(
 }
 
 @Composable
-fun SummaryView(
+fun AgendaView(
     context: android.content.Context,
     events: List<Event>,
     calendars: Map<Long, Calendar>,
     calendarVisibility: Map<Long, Boolean>,
-    startDay: LocalDate,
-    daysToShow: Int,
+    anchorDate: LocalDate,
+    dateViewing: LocalDate,
     onEventClick: (Instance) -> Unit,
-    onSwipe: (Float) -> Unit
+    onDateViewingChanged: (LocalDate) -> Unit
 ) {
-    val weekDays = (0 until daysToShow).map { startDay.plus(DatePeriod(days = it)) }
-    val vEventsByID = events.associateBy { it.id!! }
+    val initialIndex = 50000
+    val listState = rememberLazyListState(initialIndex)
+    val vEventsByID = remember(events) { events.associateBy { it.id!! } }
 
-    val instances = remember(events, calendarVisibility, startDay) {
-        Instance.getInstances(
-            context,
-            startDay.atStartOfDayIn(TimeZone.currentSystemDefault()),
-            weekDays.last().atEndOfDayIn(TimeZone.currentSystemDefault())
-        )
-            .filter { it.eventID in vEventsByID }
-            .filter { calendarVisibility[vEventsByID[it.eventID]!!.calendarID] ?: true }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }.collect { index ->
+            val date = anchorDate.plus(DatePeriod(days = index - initialIndex))
+            if (date != dateViewing) {
+                onDateViewingChanged(date)
+            }
+        }
     }
 
-    Column(Modifier.fillMaxSize().pointerInput(Unit) {
-        var dragTotal = 0f
-        detectHorizontalDragGestures({}, {
-            if (kotlin.math.abs(dragTotal) >= 100f) onSwipe(dragTotal)
-            dragTotal = 0f
-        }, { dragTotal = 0f }, { change, delta ->
-            dragTotal += delta
-            change.consume()
-        })
-    }) {
-        WeekHeader(weekDays)
-        Row(Modifier.fillMaxSize(), Arrangement.spacedBy(4.dp)) {
-            weekDays.forEach { day ->
-                val dayInstances = instances.filter { day in it.spanDays }.sortedBy { it.startDateTime }
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .border(1.dp, Color.DarkGray)
-                        .padding(2.dp)
-                ) {
-                    dayInstances.forEach { instance ->
-                        val ev = vEventsByID[instance.eventID]!!
-                        Box(
-                            Modifier
-                                .padding(bottom = 2.dp)
-                                .background(Color(ev.color ?: calendars[ev.calendarID]!!.color), RoundedCornerShape(4.dp))
-                                .fillMaxWidth()
-                                .clickable { onEventClick(instance) }
-                                .padding(4.dp)
-                        ) {
-                            Text(
-                                ev.title.ifEmpty { context.getString(R.string.no_title) },
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
+    LaunchedEffect(dateViewing) {
+        if (!listState.isScrollInProgress) {
+            val targetIndex = initialIndex + (dateViewing.toEpochDays() - anchorDate.toEpochDays()).toInt()
+            if (listState.firstVisibleItemIndex != targetIndex) {
+                listState.scrollToItem(targetIndex)
+            }
+        }
+    }
+
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+        items(100000) { index ->
+            val date = anchorDate.plus(DatePeriod(days = index - initialIndex))
+            val dayInstances = remember(date, events, calendarVisibility) {
+                Instance.getInstances(
+                    context,
+                    date.atStartOfDayIn(TimeZone.currentSystemDefault()),
+                    date.plus(DatePeriod(days = 1)).atStartOfDayIn(TimeZone.currentSystemDefault())
+                )
+                    .filter { it.eventID in vEventsByID }
+                    .filter { calendarVisibility[vEventsByID[it.eventID]!!.calendarID] ?: true }
+                    .sortedBy { it.startDateTime }
+            }
+
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    text = date.format(dateFormat),
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                dayInstances.forEach { instance ->
+                    val ev = vEventsByID[instance.eventID]!!
+                    ListItem(
+                        headlineContent = { Text(ev.title.ifEmpty { context.getString(R.string.no_title) }) },
+                        supportingContent = {
+                            Text(dateRangeString(context, instance.startDateTimeDisplay.date, instance.endDateTimeDisplay.date, instance.startDateTimeDisplay.time, instance.endDateTimeDisplay.time, instance.allDay))
+                        },
+                        leadingContent = {
+                            Box(Modifier.size(16.dp).background(Color(ev.color ?: calendars[ev.calendarID]!!.color), CircleShape))
+                        },
+                        modifier = Modifier.clickable { onEventClick(instance) }
+                    )
                 }
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Color.DarkGray.copy(alpha = 0.3f))
             }
         }
     }
