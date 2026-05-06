@@ -90,11 +90,11 @@ fun NotesListPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) 
                 dbConfigs = listOf("passwords-db" to pass),
                 extraFiles = emptyList()
             )
-            IconButton({
-                filePickerLauncher.launch(arrayOf("text/plain", "text/markdown"))
-            }) {
-                IconUpload()
-            }
+//            IconButton({
+//                filePickerLauncher.launch(arrayOf("text/plain", "text/markdown"))
+//            }) {
+//                IconUpload()
+//            }
         },
         selectionActions = { selectedNotes, clearSelection ->
             IconButton(onClick = {
