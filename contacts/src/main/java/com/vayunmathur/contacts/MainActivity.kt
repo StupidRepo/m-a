@@ -3,58 +3,38 @@ package com.vayunmathur.contacts
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.ContactsContract
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import android.provider.ContactsContract
-import com.vayunmathur.library.util.NavKey
-import com.vayunmathur.contacts.ui.ContactDetailsPage
-import com.vayunmathur.contacts.ui.ContactList
-import com.vayunmathur.contacts.ui.ContactListPick
-import com.vayunmathur.contacts.ui.EditContactPage
-import com.vayunmathur.contacts.ui.SettingsPage
-import com.vayunmathur.contacts.ui.dialogs.AddAccountDialog
-import com.vayunmathur.contacts.ui.dialogs.EventDatePickerDialog
-import com.vayunmathur.contacts.ui.dialogs.EventDeleteConfirmDialog
 import com.vayunmathur.contacts.data.CDKPhone
+import com.vayunmathur.contacts.ui.*
+import com.vayunmathur.contacts.ui.dialogs.*
 import com.vayunmathur.contacts.util.ContactViewModel
 import com.vayunmathur.library.ui.DynamicTheme
-import com.vayunmathur.library.util.DialogPage
-import com.vayunmathur.library.util.ListDetailPage
-import com.vayunmathur.library.util.ListPage
-import com.vayunmathur.library.util.MainNavigation
-import com.vayunmathur.library.util.rememberNavBackStack
+import com.vayunmathur.library.util.*
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 
 class MainActivity : ComponentActivity() {
+    private val importUris = mutableStateOf<List<Uri>>(emptyList())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleIntent(intent)
         setContent {
             val permissions = arrayOf(Manifest.permission.READ_CONTACTS, Manifest.permission.WRITE_CONTACTS)
             var hasPermissions by remember { mutableStateOf(permissions.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) }
@@ -63,7 +43,13 @@ class MainActivity : ComponentActivity() {
                     NoPermissionsScreen(permissions) { hasPermissions = it }
                 } else {
                     val viewModel: ContactViewModel = viewModel()
-                    // If the app was launched with ACTION_PICK/GET_CONTENT, forward to the picker flow (same as before).
+                    
+                    val uris by importUris
+                    if (uris.isNotEmpty()) {
+                        ImportVcfDialog(viewModel, uris) { importUris.value = emptyList() }
+                    }
+
+                    // If the app was launched with ACTION_PICK/GET_CONTENT, forward to the picker flow.
                     if (intent.action == Intent.ACTION_PICK || intent.action == Intent.ACTION_GET_CONTENT) {
                         var type = intent.type
                         if (intent.data?.toString()?.contains("phones") == true) {
@@ -106,9 +92,25 @@ class MainActivity : ComponentActivity() {
                             }
                             else -> null
                         }
-                        Navigation(viewModel, initialRoute)
+                        Box(Modifier.fillMaxSize().onFileDrop { importUris.value = it }) {
+                            Navigation(viewModel, initialRoute)
+                        }
                     }
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        intent?.let {
+            val uris = IntentHelper.getUrisFromIntent(it)
+            if (uris.isNotEmpty()) {
+                importUris.value = uris
             }
         }
     }

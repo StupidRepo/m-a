@@ -1,8 +1,11 @@
 package com.vayunmathur.calendar
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.CalendarContract
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -14,49 +17,32 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import android.content.Intent
-import android.provider.CalendarContract
-import com.vayunmathur.library.util.NavKey
-import com.vayunmathur.calendar.ui.CalendarScreen
-import com.vayunmathur.calendar.ui.EditEventScreen
-import com.vayunmathur.calendar.ui.EventScreen
-import com.vayunmathur.calendar.ui.SettingsScreen
-import com.vayunmathur.calendar.ui.dialogs.CalendarPickerDialog
-import com.vayunmathur.calendar.ui.dialogs.CalendarSetDateDialog
-import com.vayunmathur.calendar.ui.dialogs.RecurrenceDialog
-import com.vayunmathur.calendar.ui.dialogs.SettingsAddCalendarDialog
-import com.vayunmathur.calendar.ui.dialogs.SettingsChangeColorDialog
-import com.vayunmathur.calendar.ui.dialogs.SettingsDeleteCalendarDialog
-import com.vayunmathur.calendar.ui.dialogs.SettingsRenameCalendarDialog
-import com.vayunmathur.library.ui.dialog.TimePickerDialogContent
-import com.vayunmathur.calendar.ui.dialogs.TimezonePickerDialog
+import com.vayunmathur.calendar.data.Instance
+import com.vayunmathur.calendar.ui.*
+import com.vayunmathur.calendar.ui.dialogs.*
+import com.vayunmathur.calendar.util.CalendarViewModel
+import com.vayunmathur.calendar.util.RecurrenceParams
 import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.ui.dialog.DatePickerDialog
-import com.vayunmathur.library.util.DialogPage
-import com.vayunmathur.library.util.MainNavigation
-import com.vayunmathur.library.util.rememberNavBackStack
+import com.vayunmathur.library.ui.dialog.TimePickerDialogContent
+import com.vayunmathur.library.util.*
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
-import com.vayunmathur.calendar.util.RecurrenceParams
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import com.vayunmathur.calendar.data.Instance
-import com.vayunmathur.calendar.util.CalendarViewModel
 
 class MainActivity : ComponentActivity() {
+    private val importUris = mutableStateOf<List<Uri>>(emptyList())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleIntent(intent)
         setContent {
             val permissions = arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
             var hasPermissions by remember { mutableStateOf(permissions.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) }
@@ -64,6 +50,13 @@ class MainActivity : ComponentActivity() {
                 if (!hasPermissions) {
                     NoPermissionsScreen(permissions) { hasPermissions = it }
                 } else {
+                    val viewModel: CalendarViewModel = viewModel()
+                    
+                    val uris by importUris
+                    if (uris.isNotEmpty()) {
+                        ImportIcsDialog(viewModel, uris) { importUris.value = emptyList() }
+                    }
+
                     val initialRoute = when {
                         intent.hasExtra("instance") -> {
                             Route.Event(Json.decodeFromString<Instance>(intent.getStringExtra("instance")!!))
@@ -81,8 +74,24 @@ class MainActivity : ComponentActivity() {
                         }
                         else -> null
                     }
-                    Navigation(initialRoute)
+                    Box(Modifier.fillMaxSize().onFileDrop { importUris.value = it }) {
+                        Navigation(viewModel, initialRoute)
+                    }
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        intent?.let {
+            val uris = IntentHelper.getUrisFromIntent(it)
+            if (uris.isNotEmpty()) {
+                importUris.value = uris
             }
         }
     }
@@ -148,7 +157,6 @@ sealed interface Route: NavKey {
         val endTime: Long? = null,
         val allDay: Boolean? = null
     ): Route {
-        // Dialog routes for date/time picking that are specific to the EditEvent page
         @Serializable
         data class DatePickerDialog(val key: String, val initialDate: LocalDate, val minDate: LocalDate? = null): Route
 
@@ -166,8 +174,7 @@ sealed interface Route: NavKey {
 }
 
 @Composable
-fun Navigation(initialRoute: Route?) {
-    val viewModel: CalendarViewModel = viewModel()
+fun Navigation(viewModel: CalendarViewModel, initialRoute: Route?) {
     val backStack = rememberNavBackStack(listOfNotNull(Route.Calendar, initialRoute))
     LaunchedEffect(initialRoute) {
         if(initialRoute != null) {
@@ -178,7 +185,6 @@ fun Navigation(initialRoute: Route?) {
     }
 
     MainNavigation(backStack) {
-
         entry<Route.Calendar> {
             CalendarScreen(viewModel, backStack)
         }
@@ -196,13 +202,11 @@ fun Navigation(initialRoute: Route?) {
             CalendarSetDateDialog(backStack, key.dateViewing)
         }
 
-        // Dialog entries for the new date/time pickers (nested under EditEvent)
         entry<Route.EditEvent.DatePickerDialog>(metadata = DialogPage()) { key ->
             DatePickerDialog(backStack, key.key, key.initialDate, key.minDate)
         }
 
         entry<Route.EditEvent.TimePickerDialog>(metadata = DialogPage()) { key ->
-            // initialTime is already a LocalTime? so pass directly, along with optional minTime
             TimePickerDialogContent(backStack, key.key, key.initialTime, key.minTime)
         }
 
@@ -211,16 +215,13 @@ fun Navigation(initialRoute: Route?) {
         }
 
         entry<Route.EditEvent.TimezonePickerDialog>(metadata = DialogPage()) { key ->
-            // show timezone selection dialog
             TimezonePickerDialog(backStack, key.key)
         }
 
         entry<Route.EditEvent.RecurrenceDialog>(metadata = DialogPage()) { key ->
-            // show recurrence picker dialog; RecurrenceParams is passed as initial value optionally
             RecurrenceDialog(backStack, key.key, key.startDate, key.initial)
         }
 
-        // Settings-related dialog entries
         entry<Route.Settings.ChangeColor>(metadata = DialogPage()) { key ->
             SettingsChangeColorDialog(viewModel, backStack, key.id)
         }
