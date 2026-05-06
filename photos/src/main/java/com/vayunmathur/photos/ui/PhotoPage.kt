@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,7 +35,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,19 +63,18 @@ import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.vayunmathur.library.ui.IconEdit
+import com.vayunmathur.library.ui.IconShare
 import com.vayunmathur.library.util.DatabaseViewModel
-import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.photos.R
-import com.vayunmathur.photos.Route
 import com.vayunmathur.photos.data.Photo
+import kotlin.math.absoluteValue
+import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.math.absoluteValue
-import kotlin.time.Instant
 
 // Helper class to store zoom information
 data class ZoomState(val scale: Float = 1f, val offset: Offset = Offset.Zero)
@@ -87,10 +86,11 @@ fun PhotoPage(viewModel: DatabaseViewModel, id: Long, overridePhotosList: List<P
     val context = LocalContext.current
     val photosSorted = remember(photos) { photos.sortedByDescending { it.date } }
 
-    val initialIndex = remember(photosSorted, id) {
-        val index = photosSorted.indexOfFirst { it.id == id }
-        if (index == -1) 0 else index
-    }
+    val initialIndex =
+            remember(photosSorted, id) {
+                val index = photosSorted.indexOfFirst { it.id == id }
+                if (index == -1) 0 else index
+            }
 
     var isMetadataVisible by remember { mutableStateOf(true) }
 
@@ -98,41 +98,41 @@ fun PhotoPage(viewModel: DatabaseViewModel, id: Long, overridePhotosList: List<P
     val zoomStates = remember { mutableStateMapOf<Long, ZoomState>() }
 
     if (photosSorted.isNotEmpty()) {
-        val pagerState = rememberPagerState(
-            initialPage = initialIndex,
-            pageCount = { photosSorted.size }
-        )
+        val pagerState =
+                rememberPagerState(initialPage = initialIndex, pageCount = { photosSorted.size })
 
         Scaffold(containerColor = Color.Black) { paddingValues ->
             HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize().padding(paddingValues),
-                beyondViewportPageCount = 1,
-                userScrollEnabled = true
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize().padding(paddingValues),
+                    beyondViewportPageCount = 1,
+                    userScrollEnabled = true
             ) { pageIndex ->
                 val photo = photosSorted[pageIndex]
                 val zoomState = zoomStates[photo.id] ?: ZoomState()
 
                 PhotoDetailView(
-                    photo = photo,
-                    context = context,
-                    pagerState = pagerState,
-                    pageIndex = pageIndex,
-                    isSettled = pagerState.settledPage == pageIndex,
-                    isMetadataVisible = isMetadataVisible,
-                    currentZoom = zoomState,
-                    onZoomUpdate = { newState -> zoomStates[photo.id] = newState },
-                    onToggleMetadata = { isMetadataVisible = !isMetadataVisible },
-                    onEditPhoto = {
-                        val intent = Intent(context, EditActivity::class.java).apply {
-                            putExtra("photo_id", photo.id)
-                            // Use NEW_DOCUMENT to treat this as a separate document in Recents
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
-                            // MULTIPLE_TASK ensures it doesn't just recycle an old task
-                            addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                        photo = photo,
+                        context = context,
+                        pagerState = pagerState,
+                        pageIndex = pageIndex,
+                        isSettled = pagerState.settledPage == pageIndex,
+                        isMetadataVisible = isMetadataVisible,
+                        currentZoom = zoomState,
+                        onZoomUpdate = { newState -> zoomStates[photo.id] = newState },
+                        onToggleMetadata = { isMetadataVisible = !isMetadataVisible },
+                        onEditPhoto = {
+                            val intent =
+                                    Intent(context, EditActivity::class.java).apply {
+                                        putExtra("photo_id", photo.id)
+                                        // Use NEW_DOCUMENT to treat this as a separate document in
+                                        // Recents
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
+                                        // MULTIPLE_TASK ensures it doesn't just recycle an old task
+                                        addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                                    }
+                            context.startActivity(intent)
                         }
-                        context.startActivity(intent)
-                    }
                 )
             }
         }
@@ -141,16 +141,16 @@ fun PhotoPage(viewModel: DatabaseViewModel, id: Long, overridePhotosList: List<P
 
 @Composable
 fun PhotoDetailView(
-    photo: Photo,
-    context: Context,
-    pagerState: PagerState,
-    pageIndex: Int,
-    isSettled: Boolean,
-    isMetadataVisible: Boolean,
-    currentZoom: ZoomState,
-    onZoomUpdate: (ZoomState) -> Unit,
-    onToggleMetadata: () -> Unit,
-    onEditPhoto: () -> Unit
+        photo: Photo,
+        context: Context,
+        pagerState: PagerState,
+        pageIndex: Int,
+        isSettled: Boolean,
+        isMetadataVisible: Boolean,
+        currentZoom: ZoomState,
+        onZoomUpdate: (ZoomState) -> Unit,
+        onToggleMetadata: () -> Unit,
+        onEditPhoto: () -> Unit
 ) {
     var countryName by remember(photo.id) { mutableStateOf<String?>(null) }
     var size by remember { mutableStateOf(IntSize.Zero) }
@@ -162,21 +162,19 @@ fun PhotoDetailView(
     // Derived state for how far this specific page is from the center
     val pageOffset by remember {
         derivedStateOf {
-            ((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction).absoluteValue
+            ((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction)
+                    .absoluteValue
         }
     }
 
     // Reset zoom only when the page is fully scrolled out of view (offset >= 1.0)
     // This allows the "fadeOut" to happen while the image is still zoomed.
     LaunchedEffect(Unit) {
-        snapshotFlow { pageOffset }
-            .filter { it >= 0.99f }
-            .distinctUntilChanged()
-            .collect {
-                if (updatedZoomState.scale > 1f) {
-                    updatedOnZoomUpdate(ZoomState())
-                }
+        snapshotFlow { pageOffset }.filter { it >= 0.99f }.distinctUntilChanged().collect {
+            if (updatedZoomState.scale > 1f) {
+                updatedOnZoomUpdate(ZoomState())
             }
+        }
     }
 
     LaunchedEffect(photo.id) {
@@ -184,143 +182,202 @@ fun PhotoDetailView(
             withContext(Dispatchers.IO) {
                 try {
                     val geocoder = Geocoder(context)
-                    countryName = geocoder.getFromLocation(photo.lat, photo.long, 1)?.firstOrNull()?.countryName
-                } catch (e: Exception) { countryName = "Unknown" }
+                    countryName =
+                            geocoder.getFromLocation(photo.lat, photo.long, 1)
+                                    ?.firstOrNull()
+                                    ?.countryName
+                } catch (e: Exception) {
+                    countryName = "Unknown"
+                }
             }
         }
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { updatedOnToggleMetadata() },
-                    onDoubleTap = {
-                        val newScale = if (updatedZoomState.scale > 1f) 1f else 2.5f
-                        updatedOnZoomUpdate(ZoomState(scale = newScale, offset = Offset.Zero))
-                    }
-                )
-            }
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    do {
-                        val event = awaitPointerEvent()
-                        val zoomChange = event.calculateZoom()
-                        val panChange = event.calculatePan()
-
-                        val isPinching = zoomChange != 1f
-                        val isZoomed = updatedZoomState.scale > 1.01f
-
-                        if (isZoomed || isPinching) {
-                            val newScale = (updatedZoomState.scale * zoomChange).coerceIn(1f, 5f)
-
-                            if (newScale > 1f) {
-                                val maxX = (size.width * (newScale - 1) / 2)
-                                val maxY = (size.height * (newScale - 1) / 2)
-
-                                val newOffset = updatedZoomState.offset + panChange
-
-                                val isAtLeftEdge = newOffset.x >= maxX && panChange.x > 0
-                                val isAtRightEdge = newOffset.x <= -maxX && panChange.x < 0
-
-                                val boundedOffset = Offset(
-                                    newOffset.x.coerceIn(-maxX, maxX),
-                                    newOffset.y.coerceIn(-maxY, maxY)
+            modifier =
+                    Modifier.fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                        onTap = { updatedOnToggleMetadata() },
+                                        onDoubleTap = {
+                                            val newScale =
+                                                    if (updatedZoomState.scale > 1f) 1f else 2.5f
+                                            updatedOnZoomUpdate(
+                                                    ZoomState(
+                                                            scale = newScale,
+                                                            offset = Offset.Zero
+                                                    )
+                                            )
+                                        }
                                 )
-
-                                updatedOnZoomUpdate(ZoomState(scale = newScale, offset = boundedOffset))
-
-                                if (isPinching || (!isAtLeftEdge && !isAtRightEdge)) {
-                                    event.changes.forEach { it.consume() }
-                                }
-                            } else {
-                                updatedOnZoomUpdate(ZoomState(scale = 1f, offset = Offset.Zero))
                             }
-                        }
-                    } while (event.changes.any { it.pressed })
-                }
-            }
+                            .pointerInput(Unit) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    do {
+                                        val event = awaitPointerEvent()
+                                        val zoomChange = event.calculateZoom()
+                                        val panChange = event.calculatePan()
+
+                                        val isPinching = zoomChange != 1f
+                                        val isZoomed = updatedZoomState.scale > 1.01f
+
+                                        if (isZoomed || isPinching) {
+                                            val newScale =
+                                                    (updatedZoomState.scale * zoomChange).coerceIn(
+                                                            1f,
+                                                            5f
+                                                    )
+
+                                            if (newScale > 1f) {
+                                                val maxX = (size.width * (newScale - 1) / 2)
+                                                val maxY = (size.height * (newScale - 1) / 2)
+
+                                                val newOffset = updatedZoomState.offset + panChange
+
+                                                val isAtLeftEdge =
+                                                        newOffset.x >= maxX && panChange.x > 0
+                                                val isAtRightEdge =
+                                                        newOffset.x <= -maxX && panChange.x < 0
+
+                                                val boundedOffset =
+                                                        Offset(
+                                                                newOffset.x.coerceIn(-maxX, maxX),
+                                                                newOffset.y.coerceIn(-maxY, maxY)
+                                                        )
+
+                                                updatedOnZoomUpdate(
+                                                        ZoomState(
+                                                                scale = newScale,
+                                                                offset = boundedOffset
+                                                        )
+                                                )
+
+                                                if (isPinching || (!isAtLeftEdge && !isAtRightEdge)
+                                                ) {
+                                                    event.changes.forEach { it.consume() }
+                                                }
+                                            } else {
+                                                updatedOnZoomUpdate(
+                                                        ZoomState(scale = 1f, offset = Offset.Zero)
+                                                )
+                                            }
+                                        }
+                                    } while (event.changes.any { it.pressed })
+                                }
+                            }
     ) {
         if (photo.videoData == null) {
             AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(photo.uri.toUri())
-                    .diskCacheKey("thumb_${photo.id}_${photo.dateModified}")
-                    .memoryCacheKey("thumb_${photo.id}_${photo.dateModified}")
-                    .build(),
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onGloballyPositioned { layoutCoordinates ->
-                        size = layoutCoordinates.size
-                    }
-                    .graphicsLayer {
-                        scaleX = currentZoom.scale
-                        scaleY = currentZoom.scale
-                        translationX = currentZoom.offset.x
-                        translationY = currentZoom.offset.y
-                    },
-                contentScale = ContentScale.Fit
+                    model =
+                            ImageRequest.Builder(context)
+                                    .data(photo.uri.toUri())
+                                    .diskCacheKey("thumb_${photo.id}_${photo.dateModified}")
+                                    .memoryCacheKey("thumb_${photo.id}_${photo.dateModified}")
+                                    .build(),
+                    contentDescription = null,
+                    modifier =
+                            Modifier.fillMaxSize()
+                                    .onGloballyPositioned { layoutCoordinates ->
+                                        size = layoutCoordinates.size
+                                    }
+                                    .graphicsLayer {
+                                        scaleX = currentZoom.scale
+                                        scaleY = currentZoom.scale
+                                        translationX = currentZoom.offset.x
+                                        translationY = currentZoom.offset.y
+                                    },
+                    contentScale = ContentScale.Fit
             )
         } else {
             VideoPlayer(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onGloballyPositioned { size = it.size }
-                    .graphicsLayer {
-                        scaleX = currentZoom.scale
-                        scaleY = currentZoom.scale
-                        translationX = currentZoom.offset.x
-                        translationY = currentZoom.offset.y
-                    },
-                uri = photo.uri.toUri(),
-                isMetadataVisible = isMetadataVisible,
-                isSettledPage = isSettled
+                    modifier =
+                            Modifier.fillMaxSize()
+                                    .onGloballyPositioned { size = it.size }
+                                    .graphicsLayer {
+                                        scaleX = currentZoom.scale
+                                        scaleY = currentZoom.scale
+                                        translationX = currentZoom.offset.x
+                                        translationY = currentZoom.offset.y
+                                    },
+                    uri = photo.uri.toUri(),
+                    isMetadataVisible = isMetadataVisible,
+                    isSettledPage = isSettled
             )
         }
 
         AnimatedVisibility(
-            visible = isMetadataVisible,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.BottomStart)
+                visible = isMetadataVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomStart)
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        // Keep the metadata fade-out tied to the swiping distance
-                        alpha = 1f - pageOffset.coerceIn(0f, 1f)
-                    }
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(16.dp)
+                    modifier =
+                            Modifier.fillMaxWidth()
+                                    .graphicsLayer {
+                                        // Keep the metadata fade-out tied to the swiping distance
+                                        alpha = 1f - pageOffset.coerceIn(0f, 1f)
+                                    }
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .padding(16.dp)
             ) {
-                Text(text = photo.name, color = Color.White, style = MaterialTheme.typography.titleLarge)
+                Text(
+                        text = photo.name,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleLarge
+                )
 
-                val dateFormatted = remember(photo.date) {
-                    Instant.fromEpochMilliseconds(photo.date)
-                        .toLocalDateTime(TimeZone.currentSystemDefault())
-                        .let {
-                            // Simple formatting for now, better to use localized date formatter
-                            "${it.day} ${it.month.name.lowercase().replaceFirstChar { c -> c.uppercase() }} ${it.year}"
+                val dateFormatted =
+                        remember(photo.date) {
+                            Instant.fromEpochMilliseconds(photo.date)
+                                    .toLocalDateTime(TimeZone.currentSystemDefault())
+                                    .let {
+                                        // Simple formatting for now, better to use localized date
+                                        // formatter
+                                        "${it.day} ${it.month.name.lowercase().replaceFirstChar { c -> c.uppercase() }} ${it.year}"
+                                    }
                         }
-                }
 
-                Text(text = stringResource(R.string.taken_on, dateFormatted), color = Color.LightGray)
+                Text(
+                        text = stringResource(R.string.taken_on, dateFormatted),
+                        color = Color.LightGray
+                )
                 if (photo.exifSet) {
-                    Text(text = stringResource(R.string.location, countryName ?: stringResource(R.string.detecting)), color = Color.LightGray)
+                    Text(
+                            text =
+                                    stringResource(
+                                            R.string.location,
+                                            countryName ?: stringResource(R.string.detecting)
+                                    ),
+                            color = Color.LightGray
+                    )
                 }
-                Text(text = stringResource(R.string.resolution, photo.width, photo.height), color = Color.LightGray)
+                Text(
+                        text = stringResource(R.string.resolution, photo.width, photo.height),
+                        color = Color.LightGray
+                )
 
-                if (photo.videoData == null) {
-                    IconButton(
-                        onClick = onEditPhoto,
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        IconEdit(tint = Color.White)
+                Row(
+                        modifier = Modifier.align(Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (photo.videoData == null) {
+                        IconButton(onClick = onEditPhoto) { IconEdit(tint = Color.White) }
                     }
+                    IconButton(
+                            onClick = {
+                                val intent =
+                                        Intent(Intent.ACTION_SEND).apply {
+                                            type =
+                                                    if (photo.videoData != null) "video/*"
+                                                    else "image/*"
+                                            putExtra(Intent.EXTRA_STREAM, photo.uri.toUri())
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                context.startActivity(Intent.createChooser(intent, "Share"))
+                            }
+                    ) { IconShare(tint = Color.White) }
                 }
             }
         }
@@ -329,10 +386,10 @@ fun PhotoDetailView(
 
 @Composable
 fun VideoPlayer(
-    modifier: Modifier,
-    uri: Uri,
-    isMetadataVisible: Boolean,
-    isSettledPage: Boolean,
+        modifier: Modifier,
+        uri: Uri,
+        isMetadataVisible: Boolean,
+        isSettledPage: Boolean,
 ) {
     val context = LocalContext.current
 
@@ -350,7 +407,7 @@ fun VideoPlayer(
 
     var isPlaying by remember { mutableStateOf(isSettledPage) }
     LaunchedEffect(isSettledPage) {
-        if(isSettledPage) {
+        if (isSettledPage) {
             exoPlayer.play()
         } else {
             exoPlayer.pause()
@@ -358,18 +415,21 @@ fun VideoPlayer(
     }
 
     DisposableEffect(exoPlayer) {
-        val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(playing: Boolean) {
-                isPlaying = playing
-            }
+        val listener =
+                object : Player.Listener {
+                    override fun onIsPlayingChanged(playing: Boolean) {
+                        isPlaying = playing
+                    }
 
-            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                // Calculate ratio from the actual video stream
-                if (videoSize.width > 0 && videoSize.height > 0) {
-                    videoAspectRatio = (videoSize.width * videoSize.pixelWidthHeightRatio) / videoSize.height
+                    override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                        // Calculate ratio from the actual video stream
+                        if (videoSize.width > 0 && videoSize.height > 0) {
+                            videoAspectRatio =
+                                    (videoSize.width * videoSize.pixelWidthHeightRatio) /
+                                            videoSize.height
+                        }
+                    }
                 }
-            }
-        }
 
         exoPlayer.addListener(listener)
         onDispose {
@@ -378,42 +438,31 @@ fun VideoPlayer(
         }
     }
 
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center
-    ) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
         // The container ensures the surface stays centered and "fitted"
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             PlayerSurface(
-                player = exoPlayer,
-                modifier = Modifier
-                    .fillMaxWidth() // Try to fill width
-                    .aspectRatio(videoAspectRatio),
-                surfaceType = SURFACE_TYPE_TEXTURE_VIEW
+                    player = exoPlayer,
+                    modifier =
+                            Modifier.fillMaxWidth() // Try to fill width
+                                    .aspectRatio(videoAspectRatio),
+                    surfaceType = SURFACE_TYPE_TEXTURE_VIEW
             )
         }
 
         // Play/Pause Overlay
-        AnimatedVisibility(
-            visible = isMetadataVisible,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            IconButton(
-                onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() }
-            ) {
+        AnimatedVisibility(visible = isMetadataVisible, enter = fadeIn(), exit = fadeOut()) {
+            IconButton(onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() }) {
                 Icon(
-                    painter = if (isPlaying) {
-                        painterResource(R.drawable.outline_pause_24)
-                    } else {
-                        painterResource(R.drawable.outline_play_circle_24)
-                    },
-                    contentDescription = "Toggle Play",
-                    modifier = Modifier.size(64.dp),
-                    tint = Color.White.copy(alpha = 0.8f)
+                        painter =
+                                if (isPlaying) {
+                                    painterResource(R.drawable.outline_pause_24)
+                                } else {
+                                    painterResource(R.drawable.outline_play_circle_24)
+                                },
+                        contentDescription = "Toggle Play",
+                        modifier = Modifier.size(64.dp),
+                        tint = Color.White.copy(alpha = 0.8f)
                 )
             }
         }
