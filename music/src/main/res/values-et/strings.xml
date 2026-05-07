@@ -37,4 +37,5 @@
     <string name="various_artists">Erinevad esitajad</string>
     <string name="notification_shuffle">Sega lood</string>
     <string name="notification_repeat">Korda</string>
+    <string name="go_to_source">Ava %1$s</string>
 </resources>
