@@ -85,8 +85,25 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import com.vayunmathur.games.wordmaker.util.Dictionary
-import com.vayunmathur.games.wordmaker.util.LevelGenerator
 import com.vayunmathur.games.wordmaker.data.CrosswordData
+import com.vayunmathur.library.util.AchievementsManager
+import com.vayunmathur.library.util.NavBackStack
+import com.vayunmathur.library.util.NavKey
+import com.vayunmathur.library.util.rememberNavBackStack
+import com.vayunmathur.library.util.MainNavigation
+import com.vayunmathur.library.ui.GameCenterScreen
+import com.vayunmathur.library.ui.AchievementNotification
+import com.vayunmathur.games.wordmaker.util.AppBackupAgent
+import kotlinx.coroutines.flow.first
+import kotlinx.serialization.Serializable
+
+@Serializable
+sealed interface Route : NavKey {
+    @Serializable
+    data object Game : Route
+    @Serializable
+    data object GameCenter : Route
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -94,14 +111,35 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             DynamicTheme {
-                WordMakerGameLoader()
+                val backStack = rememberNavBackStack<Route>(Route.Game)
+                MainNavigation(backStack) {
+                    entry<Route.Game> {
+                        WordMakerGameLoader(backStack)
+                    }
+                    entry<Route.GameCenter> {
+                        GameCenterScreen(
+                            backupAgent = AppBackupAgent(),
+                            manager = rememberAchievementsManager(levelDataStore),
+                            onBack = { backStack.pop() }
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-fun WordMakerGameLoader() {
+fun rememberAchievementsManager(levelDataStore: LevelDataStore): AchievementsManager {
+    val context = LocalContext.current
+    return remember {
+        val json = context.assets.open("achievements.json").bufferedReader().use { it.readText() }
+        com.vayunmathur.games.wordmaker.util.WordMakerAchievementsManager(context, json, levelDataStore)
+    }
+}
+
+@Composable
+fun WordMakerGameLoader(backStack: NavBackStack<Route>) {
     val context = LocalContext.current
     val levelDataStore = remember { LevelDataStore(context) }
     val currentLevel by levelDataStore.currentLevel.collectAsState(initial = 1)
@@ -111,30 +149,20 @@ fun WordMakerGameLoader() {
     var commonWords by remember { mutableStateOf<List<String>>(emptyList()) }
     val coroutineScope = rememberCoroutineScope { Dispatchers.IO }
 
+    val achievementsManager = rememberAchievementsManager(levelDataStore)
+    val newAchievement by achievementsManager.newAchievement.collectAsState()
+
     LaunchedEffect(Unit) {
+        achievementsManager.checkExistingAchievements()
         coroutineScope.launch {
             dictionary.init(context)
             commonWords = context.assets.open("common_words_list.txt").bufferedReader().use { it.readLines() }
         }
     }
 
-    LaunchedEffect(currentLevel, commonWords) { // Use currentLevel and commonWords as key
-        if (commonWords.isEmpty()) return@LaunchedEffect
-        
+    LaunchedEffect(currentLevel) {
         try {
-            var levelContent: String? = null
-            if (currentLevel > 861) {
-                levelContent = levelDataStore.loadGeneratedLevel(currentLevel)
-                if (levelContent == null) {
-                    val generator = LevelGenerator(commonWords)
-                    levelContent = generator.generateLevel(currentLevel)
-                    levelDataStore.saveGeneratedLevel(currentLevel, levelContent)
-                }
-                crosswordData = CrosswordData.fromString(levelContent)
-            } else {
-                crosswordData = CrosswordData.fromAsset(context, "levels/$currentLevel.txt")
-            }
-            
+            crosswordData = CrosswordData.fromAsset(context, "levels/$currentLevel.txt")
             if (crosswordData == null) {
                 error = context.getString(R.string.error_parse_level)
             }
@@ -154,12 +182,20 @@ fun WordMakerGameLoader() {
                     crosswordData = crosswordData!!,
                     levelDataStore = levelDataStore,
                     currentLevel = currentLevel,
-                    dictionary
+                    dictionary = dictionary,
+                    achievementsManager = achievementsManager,
+                    onOpenGameCenter = { backStack.add(Route.GameCenter) }
                 )
             }
 
             else -> {
                 CircularProgressIndicator()
+            }
+        }
+
+        newAchievement?.let {
+            AchievementNotification(it) {
+                achievementsManager.dismissNotification()
             }
         }
     }
@@ -178,7 +214,9 @@ fun WordGameScreen(
     crosswordData: CrosswordData,
     levelDataStore: LevelDataStore,
     currentLevel: Int,
-    dictionary: Dictionary
+    dictionary: Dictionary,
+    achievementsManager: AchievementsManager,
+    onOpenGameCenter: () -> Unit
 ) {
     val foundWords by levelDataStore.foundWords.collectAsState(initial = emptySet())
     val bonusWords by levelDataStore.bonusWords.collectAsState(initial = emptySet())
@@ -238,6 +276,7 @@ fun WordGameScreen(
 
                 // After animation
                 levelDataStore.addFoundWord(word)
+                achievementsManager.onAchievementUnlocked("first_word")
                 wordToAnimate = null
                 animatedLetters = emptyList()
             }
@@ -245,6 +284,12 @@ fun WordGameScreen(
     }
 
     val isWon = crosswordData.winsWith(foundWords)
+    
+    LaunchedEffect(isWon) {
+        if (isWon && currentLevel == 861) {
+            achievementsManager.onAchievementUnlocked("manual_levels_done")
+        }
+    }
 
     Scaffold(
         Modifier.fillMaxSize(),
@@ -252,6 +297,9 @@ fun WordGameScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    IconButton(onClick = onOpenGameCenter) {
+                        Icon(painterResource(id = android.R.drawable.btn_star_big_on), "Achievements")
+                    }
                     com.vayunmathur.library.ui.BackupButtons(
                         datastoreNames = listOf("settings")
                     )
@@ -336,7 +384,10 @@ fun WordGameScreen(
                                 }
                                 // Handle submission with shake animations for invalid cases
                                 if (word in crosswordData.solutionWords) {
-                                    if (word !in foundWords) wordToAnimate = word
+                                    if (word !in foundWords) {
+                                        wordToAnimate = word
+                                        if (word.length >= 7) achievementsManager.onAchievementUnlocked("long_word")
+                                    }
                                     else shakeWord()
                                 } else if (word.length < 3) {
                                     shakeWord()
@@ -349,6 +400,7 @@ fun WordGameScreen(
                                             animationSpec = tween(durationMillis = 800)
                                         )
                                         levelDataStore.addBonusWord(word)
+                                        achievementsManager.onProgressUpdated("bonus_hunter", bonusWords.size + 1)
                                         animatedWord = null
                                     }
                                 } else if (word.lowercase() in dictionary && word in bonusWords) {

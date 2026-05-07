@@ -1,0 +1,38 @@
+[
+  {
+    "id": "first_word",
+    "name": "Quick Learner",
+    "description": "Find your first word!"
+  },
+  {
+    "id": "manual_levels_done",
+    "name": "Completed",
+    "description": "Complete all 861 original curated levels."
+  },
+  {
+    "id": "bonus_hunter",
+    "name": "Bonus Hunter",
+    "description": "Find 50 bonus words.",
+    "targetProgress": 50
+  },
+  {
+    "id": "level_50",
+    "name": "Half-Century",
+    "description": "Reach level 50."
+  },
+  {
+    "id": "level_100",
+    "name": "Century",
+    "description": "Reach level 100."
+  },
+  {
+    "id": "level_500",
+    "name": "Word Smith",
+    "description": "Reach level 500."
+  },
+  {
+    "id": "long_word",
+    "name": "Lexicographer",
+    "description": "Find a word with 7 or more letters."
+  }
+]

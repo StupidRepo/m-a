@@ -29,4 +29,18 @@ class CompletedLevelsRepository(context: Context) {
             }
         }
     }
+
+    fun incrementTotalMoves() {
+        val current = prefs.getInt("total_moves", 0)
+        prefs.edit { putInt("total_moves", current + 1) }
+    }
+
+    fun getTotalMoves(): Int = prefs.getInt("total_moves", 0)
+
+    fun incrementUndoCount() {
+        val current = prefs.getInt("undo_count", 0)
+        prefs.edit { putInt("undo_count", current + 1) }
+    }
+
+    fun getUndoCount(): Int = prefs.getInt("undo_count", 0)
 }

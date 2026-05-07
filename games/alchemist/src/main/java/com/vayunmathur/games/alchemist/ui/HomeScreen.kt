@@ -24,6 +24,8 @@ import com.vayunmathur.games.alchemist.data.Alchemist
 import com.vayunmathur.games.alchemist.Route
 import androidx.compose.ui.res.stringResource
 import com.vayunmathur.games.alchemist.R
+import com.vayunmathur.library.util.AchievementsManager
+import androidx.compose.ui.res.painterResource
 import com.vayunmathur.library.util.DataStoreUtils
 import com.vayunmathur.library.util.NavBackStack
 import kotlinx.coroutines.flow.map
@@ -38,7 +40,7 @@ data class PlacedItem(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(backStack: NavBackStack<Route>, ds: DataStoreUtils) {
+fun HomeScreen(backStack: NavBackStack<Route>, ds: DataStoreUtils, achievementsManager: AchievementsManager, onOpenGameCenter: () -> Unit) {
     val itemsIds by remember {
         ds.stringSetFlow("available_items").map { set -> set.map { it.toLong() }.toSet() }
     }.collectAsState(initial = emptySet())
@@ -48,6 +50,17 @@ fun HomeScreen(backStack: NavBackStack<Route>, ds: DataStoreUtils) {
     LaunchedEffect(availableItems) {
         if (availableItems.isEmpty()) {
             (1L..4L).forEach { ds.addStringToSet("available_items", it.toString()) }
+        } else {
+            if (availableItems.size > 4) achievementsManager.onAchievementUnlocked("first_creation")
+            achievementsManager.onProgressUpdated("collector_50", availableItems.size)
+            achievementsManager.onProgressUpdated("collector_100", availableItems.size)
+            
+            if (availableItems.size >= Alchemist.items.size && Alchemist.items.isNotEmpty()) {
+                achievementsManager.onAchievementUnlocked("all_discovered")
+            }
+            if (availableItems.any { it.final }) {
+                achievementsManager.onAchievementUnlocked("final_item")
+            }
         }
     }
 
@@ -69,6 +82,9 @@ fun HomeScreen(backStack: NavBackStack<Route>, ds: DataStoreUtils) {
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    IconButton(onClick = onOpenGameCenter) {
+                        Icon(painterResource(id = android.R.drawable.btn_star_big_on), "Achievements")
+                    }
                     com.vayunmathur.library.ui.BackupButtons(
                         datastoreNames = listOf("datastore_default")
                     )

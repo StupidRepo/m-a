@@ -92,7 +92,7 @@ class DataStoreUtils private constructor(context: Context) {
     }
 
     fun stringSetFlow(key: String): Flow<Set<String>> {
-        return dataStore.data.mapNotNull { it[stringSetPreferencesKey(key)] }
+        return dataStore.data.map { it[stringSetPreferencesKey(key)] ?: emptySet() }
     }
 
     fun addStringToSet(string: String, id: String) {

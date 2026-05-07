@@ -1,0 +1,35 @@
+[
+  {
+    "id": "first_level",
+    "name": "First Breakout",
+    "description": "Complete your first level!"
+  },
+  {
+    "id": "all_levels_pack_0",
+    "name": "Pack Master",
+    "description": "Complete all levels in the Starter Pack."
+  },
+  {
+    "id": "moves_1000",
+    "name": "Smooth Mover",
+    "description": "Make 1000 total block movements.",
+    "targetProgress": 1000
+  },
+  {
+    "id": "optimal_win",
+    "name": "Perfectionist",
+    "description": "Complete a level in the optimal number of moves."
+  },
+  {
+    "id": "undo_master",
+    "name": "Time Traveler",
+    "description": "Use undo 50 times.",
+    "targetProgress": 50
+  },
+  {
+    "id": "level_50",
+    "name": "Unblock Pro",
+    "description": "Complete 50 unique levels.",
+    "targetProgress": 50
+  }
+]

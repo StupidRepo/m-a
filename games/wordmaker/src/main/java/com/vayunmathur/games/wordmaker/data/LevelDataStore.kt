@@ -51,14 +51,4 @@ class LevelDataStore(context: Context) {
             settings[BONUS_WORDS_KEY] = emptySet()
         }
     }
-
-    fun saveGeneratedLevel(level: Int, content: String) {
-        val file = File(appContext.filesDir, "level_$level.txt")
-        file.writeText(content)
-    }
-
-    fun loadGeneratedLevel(level: Int): String? {
-        val file = File(appContext.filesDir, "level_$level.txt")
-        return if (file.exists()) file.readText() else null
-    }
 }

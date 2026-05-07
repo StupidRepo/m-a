@@ -1,0 +1,33 @@
+[
+  {
+    "id": "first_mate",
+    "name": "First Mate",
+    "description": "Win your first game by checkmate!"
+  },
+  {
+    "id": "win_10",
+    "name": "Chess Enthusiast",
+    "description": "Win 10 games.",
+    "targetProgress": 10
+  },
+  {
+    "id": "win_vs_ai_hard",
+    "name": "AI Slayer",
+    "description": "Win against AI on Hard or Master difficulty."
+  },
+  {
+    "id": "castled",
+    "name": "Castle Guard",
+    "description": "Perform castling for the first time."
+  },
+  {
+    "id": "promoted",
+    "name": "Grand Evolution",
+    "description": "Promote a pawn to a higher piece."
+  },
+  {
+    "id": "won_fast",
+    "name": "Blitzkrieg",
+    "description": "Win a game in 20 moves or less."
+  }
+]

@@ -69,6 +69,19 @@ import com.vayunmathur.games.chess.data.PieceColor
 import com.vayunmathur.games.chess.data.PieceType
 import com.vayunmathur.games.chess.data.Position
 import com.vayunmathur.games.chess.data.Move
+import com.vayunmathur.library.util.AchievementsManager
+import com.vayunmathur.library.util.NavBackStack
+import com.vayunmathur.library.util.NavKey
+import com.vayunmathur.library.util.rememberNavBackStack
+import com.vayunmathur.library.util.MainNavigation
+import com.vayunmathur.library.ui.GameCenterScreen
+import com.vayunmathur.library.ui.AchievementNotification
+import com.vayunmathur.games.chess.util.AppBackupAgent
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.serialization.Serializable
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.ui.platform.LocalContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,35 +92,63 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             DynamicTheme {
-                InitialDownloadChecker(
-                    ds = ds,
-                    filesToDownload = listOf(
-                        Triple("https://tests.stockfishchess.org/api/nn/nn-c288c895ea92.nnue", "nn-c288c895ea92.nnue", "Big Neural Network"),
-                        Triple("https://tests.stockfishchess.org/api/nn/nn-37f18f62d772.nnue", "nn-37f18f62d772.nnue", "Small Neural Network")
-                    )
-                ) {
-                    val viewModel: ChessViewModel = viewModel()
+                val backStack = rememberNavBackStack<Route>(Route.Game)
+                val achievementsManager = rememberAchievementsManager()
+                val newAchievement by achievementsManager.newAchievement.collectAsState()
 
-                    var showNewGameDialog by remember { mutableStateOf(true) }
+                LaunchedEffect(Unit) {
+                    achievementsManager.checkExistingAchievements()
+                }
 
-                    LaunchedEffect(Unit) {
-                        StockfishEngine.start(this@MainActivity, "nn-c288c895ea92.nnue", "nn-37f18f62d772.nnue")
+                Box(Modifier.fillMaxSize()) {
+                    MainNavigation(backStack) {
+                        entry<Route.Game> {
+                            InitialDownloadChecker(
+                                ds = ds,
+                                filesToDownload = listOf(
+                                    Triple("https://tests.stockfishchess.org/api/nn/nn-c288c895ea92.nnue", "nn-c288c895ea92.nnue", "Big Neural Network"),
+                                    Triple("https://tests.stockfishchess.org/api/nn/nn-37f18f62d772.nnue", "nn-37f18f62d772.nnue", "Small Neural Network")
+                                )
+                            ) {
+                                val viewModel: ChessViewModel = viewModel()
+                                var showNewGameDialog by remember { mutableStateOf(true) }
+
+                                LaunchedEffect(Unit) {
+                                    StockfishEngine.start(this@MainActivity, "nn-c288c895ea92.nnue", "nn-37f18f62d772.nnue")
+                                }
+
+                                ChessGame(
+                                    viewModel = viewModel,
+                                    onSquareClick = viewModel::onSquareClick,
+                                    onPromote = viewModel::onPromote,
+                                    onNewGame = { showNewGameDialog = true },
+                                    onOpenGameCenter = { backStack.add(Route.GameCenter) },
+                                    achievementsManager = achievementsManager
+                                )
+
+                                if (showNewGameDialog) {
+                                    NewGameDialog(
+                                        onNewGame = {
+                                            viewModel.onNewGame(it)
+                                            showNewGameDialog = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        entry<Route.GameCenter> {
+                            GameCenterScreen(
+                                backupAgent = AppBackupAgent(),
+                                manager = achievementsManager,
+                                onBack = { backStack.pop() }
+                            )
+                        }
                     }
 
-                    ChessGame(
-                        viewModel = viewModel,
-                        onSquareClick = viewModel::onSquareClick,
-                        onPromote = viewModel::onPromote,
-                        onNewGame = { showNewGameDialog = true }
-                    )
-
-                    if (showNewGameDialog) {
-                        NewGameDialog(
-                            onNewGame = {
-                                viewModel.onNewGame(it)
-                                showNewGameDialog = false
-                            }
-                        )
+                    newAchievement?.let {
+                        AchievementNotification(it) {
+                            achievementsManager.dismissNotification()
+                        }
                     }
                 }
             }
@@ -207,9 +248,52 @@ fun ChessGame(
     viewModel: ChessViewModel,
     onSquareClick: (Position) -> Unit,
     onPromote: (PieceType) -> Unit,
-    onNewGame: () -> Unit
+    onNewGame: () -> Unit,
+    onOpenGameCenter: () -> Unit,
+    achievementsManager: AchievementsManager
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(uiState.board.lastMove) {
+        val lastMove = uiState.board.lastMove ?: return@LaunchedEffect
+        if (lastMove.isCastling) {
+            achievementsManager.onAchievementUnlocked("castled")
+        }
+        if (lastMove.promotedTo != null) {
+            achievementsManager.onAchievementUnlocked("promoted")
+        }
+    }
+
+    LaunchedEffect(uiState.gameStatus) {
+        val status = uiState.gameStatus ?: return@LaunchedEffect
+        val playerWins = if (uiState.gameMode is GameMode.VsAI) {
+            val playerColor = (uiState.gameMode as GameMode.VsAI).playerColor
+            if (playerColor == PieceColor.WHITE) status.contains("White wins") else status.contains("Black wins")
+        } else {
+            status.contains("wins")
+        }
+
+        if (playerWins) {
+            achievementsManager.onAchievementUnlocked("first_mate")
+            val ds = DataStoreUtils.getInstance(context)
+            val currentWins = (ds.getLong("chess_wins_count") ?: 0L) + 1
+            ds.setLong("chess_wins_count", currentWins)
+            achievementsManager.onProgressUpdated("win_10", currentWins.toInt())
+
+            if (uiState.board.moves.size <= 40) { // 20 moves per side = 40 total moves in list
+                achievementsManager.onAchievementUnlocked("won_fast")
+            }
+
+            if (uiState.gameMode is GameMode.VsAI) {
+                val diff = (uiState.gameMode as GameMode.VsAI).difficulty
+                if (diff == StockfishEngine.Difficulty.HARD || diff == StockfishEngine.Difficulty.MASTER) {
+                    achievementsManager.onAchievementUnlocked("win_vs_ai_hard")
+                }
+            }
+        }
+    }
     if (uiState.board.promotionPosition != null) {
         PawnPromotionDialog(if (uiState.turn == PieceColor.WHITE) PieceColor.BLACK else PieceColor.WHITE, onPromote = onPromote)
     }
@@ -219,6 +303,9 @@ fun ChessGame(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    IconButton(onClick = onOpenGameCenter) {
+                        Icon(painterResource(id = android.R.drawable.btn_star_big_on), "Achievements")
+                    }
                     com.vayunmathur.library.ui.BackupButtons(
                         datastoreNames = listOf("datastore_default")
                     )
@@ -401,4 +488,21 @@ fun ChessPiece(piece: Piece, size: Dp? = null, isFlipped: Boolean = false) {
             .graphicsLayer { if (isFlipped) rotationZ = 180f },
         colorFilter = ColorFilter.tint(if (piece.color == PieceColor.WHITE) Color.White else Color.Black)
     )
+}
+
+@Serializable
+sealed interface Route: NavKey {
+    @Serializable
+    data object Game: Route
+    @Serializable
+    data object GameCenter: Route
+}
+
+@Composable
+fun rememberAchievementsManager(): AchievementsManager {
+    val context = LocalContext.current
+    return remember {
+        val json = context.assets.open("achievements.json").bufferedReader().use { it.readText() }
+        com.vayunmathur.games.chess.util.ChessAchievementsManager(context, json)
+    }
 }
