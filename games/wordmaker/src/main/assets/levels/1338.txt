@@ -1,0 +1,11 @@
+ GOB      
+   I      
+  BOX     
+  I       
+BIG       
+  -       
+BOB       
+O O       
+G X       
+          
+       BIB

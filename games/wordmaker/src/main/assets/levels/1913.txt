@@ -1,0 +1,10 @@
+        A  
+        G  
+     WIRE W
+     A A  A
+   A G GEAR
+ N N E E  N
+GINGER  G  
+ G E I  RIG
+ R R N  I  
+ A   GRINGA

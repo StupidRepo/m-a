@@ -1,0 +1,11 @@
+      N 
+      O 
+  N BOOK
+K O A K 
+O BANK  
+A   K   
+NABOB   
+    O   
+BABOON  
+A O K   
+NAB     

@@ -1,0 +1,10 @@
+  A    T 
+R R  ROAD
+EAT    R 
+A  RECTO 
+DOTE    C
+   D R  O
+   COATED
+   O T  A
+ CRATED  
+   T D   

@@ -1,0 +1,10 @@
+       FEN
+          
+    H DAH 
+   FADE   
+    N AND 
+F   D D   
+ADD -     
+N E F     
+ FADED    
+  N D     

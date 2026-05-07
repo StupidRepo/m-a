@@ -1,0 +1,7 @@
+SLOP SOP 
+N  I   S 
+I NO-SLIP
+P  N  I O
+     SOIL
+      N I
+        S

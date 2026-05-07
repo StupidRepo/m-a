@@ -1,0 +1,11 @@
+  MOA      
+   R   AMO 
+   BRA R   
+    O  B A 
+   BARROOM 
+    R  R B 
+        MOB
+        O  
+       ROB 
+           
+ROOM       

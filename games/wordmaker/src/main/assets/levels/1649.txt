@@ -1,0 +1,11 @@
+   FIB     
+    L      
+   BLACK   
+   A  A LIB
+   C  L A  
+BALK FLAB  
+A  F       
+I  I B     
+L  L A     
+  FLACK    
+     K     

@@ -1,0 +1,11 @@
+   P P   
+  TIRE S 
+   E R P 
+    STRIP
+    P  T 
+  SPRITE 
+    I    
+SPRITZ   
+    Z    
+    E    
+TRIER    

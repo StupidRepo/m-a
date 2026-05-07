@@ -1,0 +1,9 @@
+LIB    OBIT
+  L B    N 
+ BOIL    T 
+  T INKBLOT
+    N  I  O
+    K  L  I
+       K  L
+           
+ BONK      

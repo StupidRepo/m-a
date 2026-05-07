@@ -1,0 +1,11 @@
+ SEND  
+ T    N
+TEN S E
+ L  LET
+DENSE  
+  E E S
+  S TEE
+  T   E
+ ELSE  
+  E    
+  DEN  

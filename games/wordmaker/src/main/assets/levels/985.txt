@@ -1,0 +1,11 @@
+         C 
+     COL O 
+    C  A A 
+   CONICAL 
+    N  O   
+  LOIN N   
+  O C LINAC
+CIAO   C  O
+  N     I C
+        OLA
+        N  

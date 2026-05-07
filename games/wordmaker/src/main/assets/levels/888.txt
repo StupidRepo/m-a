@@ -1,0 +1,11 @@
+  L  L
+  A  I
+  GILD
+ H  I 
+LIGAND
+ G  G 
+ H    
+ L GAL
+NAIL  
+ N A  
+ D DAL

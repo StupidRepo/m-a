@@ -1,0 +1,9 @@
+   D       
+  ROAD     
+   S       
+   E    B  
+  ADSORBED 
+ODD   O A A
+  DAD BAR R
+  E   E DEB
+BARE  D    

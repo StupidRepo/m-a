@@ -1,0 +1,10 @@
+  R MATER  
+ERA  R     
+A TRAMMEL  
+R    L     
+  MALE T   
+  A  TEAR  
+ ARM   M   
+  L  TAE   
+           
+        RET

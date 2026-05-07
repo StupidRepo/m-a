@@ -1,0 +1,11 @@
+     OFFAL 
+  STAB   O 
+     L S A 
+   BLASTOFF
+   O S A  L
+   A T F  O
+   S   F  A
+BOLT    SOT
+L A        
+A B        
+T          

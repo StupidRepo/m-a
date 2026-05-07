@@ -1,0 +1,9 @@
+ C        
+ O       F
+ LOB  COIL
+   I  O  A
+   FOLIC B
+   O  F   
+C  C      
+O  A      
+BOIL      

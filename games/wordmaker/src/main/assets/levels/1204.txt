@@ -1,0 +1,11 @@
+ N    G  
+RED   ODE
+ R    R N
+ DROGUE D
+    R    
+  GROUND 
+    U  O 
+D   N  G 
+O UNDER  
+G   E    
+ENDURO   

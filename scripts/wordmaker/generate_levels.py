@@ -68,9 +68,32 @@ class LevelGenerator:
                     min_words = min(8, 5 + (level - 862) // 300)
                     # Check mandatory words were actually placed
                     if len(placed_words) >= min_words and all(w in placed_words for w in mandatory):
-                        return self.grid_to_string(grid)
+                        wheel = self.get_wheel_letters(placed_words)
+                        distinct_letters = len(set(wheel))
+                        total_letters = len(wheel)
+                        
+                        # Minimums scale with level
+                        min_distinct = max(4, min(6, 4 + (level - 862) // 500))
+                        min_total = max(5, min(8, 5 + (level - 862) // 400))
+                        
+                        if total_letters <= 8 and distinct_letters >= min_distinct and total_letters >= min_total:
+                            return self.grid_to_string(grid)
         
         return "ERROR\nLEVEL"
+
+    def get_wheel_letters(self, words):
+        max_counts = {}
+        for word in words:
+            counts = {}
+            for char in word:
+                counts[char] = counts.get(char, 0) + 1
+            for char, count in counts.items():
+                max_counts[char] = max(max_counts.get(char, 0), count)
+        
+        wheel = []
+        for char, count in max_counts.items():
+            wheel.extend([char] * count)
+        return wheel
 
     def place_words(self, grid, words, placed, rows, cols):
         if not words: return True
@@ -116,19 +139,43 @@ class LevelGenerator:
         available = [w for w in all_candidates if w not in placed_words]
         if not available: return
         
+        # Calculate current bounds
+        min_r, max_r = rows, -1
+        min_c, max_c = cols, -1
+        for r in range(rows):
+            for c in range(cols):
+                if grid[r][c] != ' ':
+                    min_r = min(min_r, r)
+                    max_r = max(max_r, r)
+                    min_c = min(min_c, c)
+                    max_c = max(max_c, c)
+        
+        if max_r == -1: return
+
         random.shuffle(available)
-        word = available[0]
-        
-        row = random.choice([0, rows-1])
-        possible_cols = []
-        for c in range(cols - len(word) + 1):
-            if self.can_place(grid, word, row, c, True, rows, cols, isolated=True):
-                possible_cols.append(c)
-        
-        if possible_cols:
-            c = random.choice(possible_cols)
-            self.do_place(grid, word, row, c, True)
-            placed_words.append(word)
+        for word in available[:20]:
+            # Try placing above or below with exactly 1 row gap
+            possible_placements = []
+            
+            # Above
+            target_r = min_r - 2
+            if target_r >= 0:
+                for c in range(cols - len(word) + 1):
+                    if self.can_place(grid, word, target_r, c, True, rows, cols, isolated=True):
+                        possible_placements.append((target_r, c))
+            
+            # Below
+            target_r = max_r + 2
+            if target_r < rows:
+                for c in range(cols - len(word) + 1):
+                    if self.can_place(grid, word, target_r, c, True, rows, cols, isolated=True):
+                        possible_placements.append((target_r, c))
+            
+            if possible_placements:
+                r, c = random.choice(possible_placements)
+                self.do_place(grid, word, r, c, True)
+                placed_words.append(word)
+                return
 
     def can_place(self, grid, word, r, c, horizontal, rows, cols, isolated=False):
         if horizontal:
@@ -215,9 +262,15 @@ class LevelGenerator:
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Load common words
+    # Load common words and unique them while preserving order
     with open(os.path.join(script_dir, "common_words_list.txt"), "r") as f:
-        words = [w.strip().upper() for w in f.readlines()]
+        raw_words = [w.strip().upper() for w in f.readlines()]
+        words = []
+        seen = set()
+        for w in raw_words:
+            if w not in seen:
+                words.append(w)
+                seen.add(w)
     
     # Load bad words
     try:

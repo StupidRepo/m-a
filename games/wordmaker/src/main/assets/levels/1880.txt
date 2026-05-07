@@ -1,0 +1,11 @@
+       COST
+         E 
+  S    S E 
+  ESCORTED 
+  C    E   
+  T  R R   
+  O RESECT 
+CORE C O E 
+O    T   E 
+R  STORE   
+D          

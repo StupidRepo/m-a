@@ -1,0 +1,9 @@
+      N P
+    ANI E
+    N T A
+  PATIENT
+    I   Y
+PAINT    
+E   Y    
+N TYPE   
+T   E    

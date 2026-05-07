@@ -1,0 +1,10 @@
+ COL     
+C  U  D  
+U  C  U  
+DUCK LOCK
+  U  O   
+D CLOUD  
+O K  D   
+CLOCK    
+K L      
+  DOC    

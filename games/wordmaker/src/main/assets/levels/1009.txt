@@ -1,0 +1,11 @@
+T  EAST 
+R    T  
+E    A  
+ARREST  
+T E     
+  S E T 
+ STARTER
+  A A R 
+RARE  R 
+A T TEAR
+T       

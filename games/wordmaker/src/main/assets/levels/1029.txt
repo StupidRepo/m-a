@@ -1,0 +1,9 @@
+       ROUT
+       U   
+    TURNOFF
+F   U  O  O
+UFO RUFF  U
+N URN  F  N
+  T     NUT
+           
+ TORN      
