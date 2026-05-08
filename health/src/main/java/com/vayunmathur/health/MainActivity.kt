@@ -46,6 +46,7 @@ import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.RespiratoryRateRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SkinTemperatureRecord
+import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
@@ -82,7 +83,7 @@ val CLASSES = setOf(
     WeightRecord::class, HeightRecord::class, BodyFatRecord::class, LeanBodyMassRecord::class, BoneMassRecord::class, BodyWaterMassRecord::class,
 
     // Lifestyle & Nutrition
-    MindfulnessSessionRecord::class, HydrationRecord::class, NutritionRecord::class, // TODO: readd these: SleepSessionRecord::class
+    MindfulnessSessionRecord::class, HydrationRecord::class, NutritionRecord::class, SleepSessionRecord::class
 )
 
 val PERMISSIONS = CLASSES.map { HealthPermission.getReadPermission(it) }.toSet() + 
@@ -173,6 +174,9 @@ sealed interface Route: NavKey {
 
     @Serializable
     data class BarChartDetails(val healthMetric: HealthMetricConfig): Route
+
+    @Serializable
+    data object SleepDetails: Route
 }
 
 @Composable
@@ -211,6 +215,9 @@ fun Navigation() {
         }
         entry<Route.BarChartDetails> {
             BarChartDetails(backStack, it.healthMetric)
+        }
+        entry<Route.SleepDetails> {
+            com.vayunmathur.health.ui.SleepDetailsPage(backStack)
         }
     }
 }

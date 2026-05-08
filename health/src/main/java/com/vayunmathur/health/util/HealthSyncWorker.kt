@@ -24,6 +24,7 @@ import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.RespiratoryRateRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SkinTemperatureRecord
+import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
@@ -50,6 +51,9 @@ import com.vayunmathur.library.util.buildDatabase
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import com.vayunmathur.health.data.SleepStage
 
 /**
  * Worker that ensures local Room DB is in sync with Health Connect.
@@ -164,7 +168,30 @@ fun androidx.health.connect.client.records.Record.toRecord(): List<Record> =
         is BodyWaterMassRecord -> listOf(Record(this.metadata.id, 0, RecordType.BodyWaterMass, this.time, this.time, this.mass.inKilograms, metadata = "Body Water Mass"))
 
         // --- Lifestyle ---
-//                    is SleepSessionRecord -> listOf(Record(this.metadata.id, 0, "Sleep", this.startTime, this.endTime, this))
+        is SleepSessionRecord -> {
+            val stages = this.stages.map { stage ->
+                SleepStage(stage.startTime.toEpochMilli(), stage.endTime.toEpochMilli(), stage.stage)
+            }
+            val awake = this.stages.filter { it.stage == SleepSessionRecord.STAGE_TYPE_AWAKE || it.stage == SleepSessionRecord.STAGE_TYPE_OUT_OF_BED }.sumOf { Duration.between(it.startTime, it.endTime).toMillis() }
+            val rem = this.stages.filter { it.stage == SleepSessionRecord.STAGE_TYPE_REM }.sumOf { Duration.between(it.startTime, it.endTime).toMillis() }
+            val light = this.stages.filter { it.stage == SleepSessionRecord.STAGE_TYPE_LIGHT }.sumOf { Duration.between(it.startTime, it.endTime).toMillis() }
+            val deep = this.stages.filter { it.stage == SleepSessionRecord.STAGE_TYPE_DEEP }.sumOf { Duration.between(it.startTime, it.endTime).toMillis() }
+            val unknown = this.stages.filter { it.stage == SleepSessionRecord.STAGE_TYPE_UNKNOWN }.sumOf { Duration.between(it.startTime, it.endTime).toMillis() }
+
+            listOf(Record(
+                this.metadata.id, 0, RecordType.Sleep, this.startTime, this.endTime,
+                Duration.between(this.startTime, this.endTime).toMillis().toDouble() / 1000.0 / 60.0 / 60.0, // Hours
+                sleepData = com.vayunmathur.health.data.SleepData(
+                    awakeDurationMillis = awake,
+                    remDurationMillis = rem,
+                    lightDurationMillis = light,
+                    deepDurationMillis = deep,
+                    unknownDurationMillis = unknown,
+                    stagesJson = Json.encodeToString(stages)
+                ),
+                metadata = "Sleep Session"
+            ))
+        }
         is MindfulnessSessionRecord -> listOf(Record(this.metadata.id, 0, RecordType.Mindfulness, this.startTime, this.endTime, Duration.between(this.startTime, this.endTime).toMillis().toDouble() / 1000.0 / 60.0, metadata = "Mindfulness"))
         is HydrationRecord -> listOf(Record(this.metadata.id, 0, RecordType.Hydration, this.startTime, this.endTime, this.volume.inMilliliters, metadata = "Hydration"))
         is NutritionRecord -> {

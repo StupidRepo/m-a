@@ -83,6 +83,7 @@ fun MainPage(backStack: NavBackStack<Route>) {
     var vo2Max by remember { mutableStateOf<Double?>(null) }
     var bloodGlucose by remember { mutableStateOf<Double?>(null) }
     var bloodPressure by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    var sleepMinutes by remember { mutableStateOf<Long?>(null) }
 
     // Body Measurement States
     var height by remember { mutableStateOf<Double?>(null) }
@@ -128,6 +129,11 @@ fun MainPage(backStack: NavBackStack<Route>) {
                         it.value to it.secondaryValue
                     }
                 }
+                val sleepD = async {
+                    HealthAPI.lastRecord(RecordType.Sleep)?.let {
+                        (it.value * 60).toLong()
+                    }
+                }
                 val heightD = async { HealthAPI.lastRecord(RecordType.Height)?.value }
                 val weightD = async { HealthAPI.lastRecord(RecordType.Weight)?.value }
                 val bodyFatD = async { HealthAPI.lastRecord(RecordType.BodyFat)?.value }
@@ -143,6 +149,7 @@ fun MainPage(backStack: NavBackStack<Route>) {
                 vo2Max = vo2MaxD.await()
                 bloodGlucose = bloodGlucoseD.await()
                 bloodPressure = bloodPressureD.await()
+                sleepMinutes = sleepD.await()
                 height = heightD.await()
                 weight = weightD.await()
                 bodyFat = bodyFatD.await()
@@ -212,8 +219,9 @@ fun MainPage(backStack: NavBackStack<Route>) {
 
             item { Distance(backStack,distanceToday) }
             item { HeartRate(backStack, heartRateMaxToday, heartRateMinToday) }
-            // TODO: add this back
-            //Sleep(aggregates?.get(SleepSessionRecord.SLEEP_DURATION_TOTAL)?.toKotlinDuration()?.inWholeMinutes ?: 0)
+            item { 
+                SleepCard(backStack, sleepMinutes ?: 0L)
+            }
 
 
             // 1. Vitals & Clinical Metrics
@@ -441,9 +449,11 @@ fun HeartRate(backStack: NavBackStack<Route>, max: Long, min: Long) {
 }
 
 @Composable
-fun Sleep(min: Long) {
+fun SleepCard(backStack: NavBackStack<Route>, min: Long) {
     val context = LocalContext.current
-    GenericCard(stringResource(R.string.label_sleep), null, stringResource(R.string.unit_hr), hoursMinutesString(context, min), stringResource(R.string.label_last_night)) {
+    GenericCard(stringResource(R.string.label_sleep), null, "", hoursMinutesString(context, min), stringResource(R.string.label_last_night), onClick = {
+        backStack.add(Route.SleepDetails)
+    }) {
         ProgressBarGraphic(R.drawable.baseline_bedtime_24, min.toFloat(), 480f, Color(0xFF9C27B0))
     }
 }

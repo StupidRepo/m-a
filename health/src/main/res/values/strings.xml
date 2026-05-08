@@ -56,6 +56,13 @@
     <string name="metric_lean_body_mass">Lean Body Mass</string>
     <string name="metric_bone_mass">Bone Mass</string>
     <string name="metric_body_water_mass">Body Water Mass</string>
+    <string name="metric_sleep">Sleep</string>
+
+    <!-- Sleep Stages -->
+    <string name="label_awake">Awake</string>
+    <string name="label_rem">REM</string>
+    <string name="label_core">Core</string>
+    <string name="label_deep">Deep</string>
 
     <!-- MainPage – section headers -->
     <string name="section_medical_records">Medical Records</string>

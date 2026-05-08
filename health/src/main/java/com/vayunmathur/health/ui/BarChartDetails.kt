@@ -120,7 +120,8 @@ enum class HealthMetricConfig(
     BODY_FAT(R.string.metric_body_fat, RecordType.BodyFat, "%", 20.0, isLineChart = true, useDecimals = true),
     LEAN_BODY_MASS(R.string.metric_lean_body_mass, RecordType.LeanBodyMass, "kg", 60.0, isLineChart = true, useDecimals = true),
     BONE_MASS(R.string.metric_bone_mass, RecordType.BoneMass, "kg", 3.0, isLineChart = true, useDecimals = true),
-    BODY_WATER_MASS(R.string.metric_body_water_mass, RecordType.BodyWaterMass, "kg", 45.0, isLineChart = true, useDecimals = true)
+    BODY_WATER_MASS(R.string.metric_body_water_mass, RecordType.BodyWaterMass, "kg", 45.0, isLineChart = true, useDecimals = true),
+    SLEEP(R.string.metric_sleep, RecordType.Sleep, "hr", 8.0, isLineChart = false, useDecimals = true)
 }
 
 data class MetricDashboardData(

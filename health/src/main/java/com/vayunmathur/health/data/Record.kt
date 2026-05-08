@@ -70,6 +70,23 @@ data class NutritionData(
     val calories: Double = 0.0
 )
 
+@Serializable
+data class SleepStage(
+    val startTimeMillis: Long,
+    val endTimeMillis: Long,
+    val stage: Int
+)
+
+@Serializable
+data class SleepData(
+    val awakeDurationMillis: Long = 0,
+    val remDurationMillis: Long = 0,
+    val lightDurationMillis: Long = 0,
+    val deepDurationMillis: Long = 0,
+    val unknownDurationMillis: Long = 0,
+    val stagesJson: String? = null
+)
+
 @Entity(indices = [Index(value = ["type", "startTime", "endTime"])])
 data class Record(
     val id: String,
@@ -80,6 +97,7 @@ data class Record(
     val value: Double,
     val secondaryValue: Double = 0.0,
     @Embedded(prefix = "nutrition_") val nutritionData: NutritionData? = null,
+    @Embedded(prefix = "sleep_") val sleepData: SleepData? = null,
     val metadata: String? = null,
     @PrimaryKey val primaryKey: String = "$id-$index",
 )
@@ -390,7 +408,7 @@ interface HealthDao {
 
 @Database(
     entities = [Record::class, Ingredient::class, Recipe::class, ServingUnit::class, RecipeIngredient::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
