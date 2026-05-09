@@ -1,13 +1,13 @@
 package com.vayunmathur.passwords.util
 
 import com.vayunmathur.library.util.BaseBackupAgent
-import com.vayunmathur.library.util.BiometricDatabaseHelper
+import com.vayunmathur.library.util.DatabaseHelper
 import java.io.File
 
 class AppBackupAgent : BaseBackupAgent() {
     override val dbConfigs: List<Pair<String, String>>
         get() {
-            val pass = BiometricDatabaseHelper(this).getPassphrase(false)
+            val pass = DatabaseHelper(this).getPassphrase()
             return listOf("passwords-db" to pass)
         }
 

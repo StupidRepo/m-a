@@ -50,7 +50,7 @@ import com.vayunmathur.photos.util.ImageLoader
 import com.vayunmathur.photos.util.SyncWorker
 import kotlinx.serialization.Serializable
 import com.vayunmathur.library.R as LibraryR
-import com.vayunmathur.library.util.unlockDatabaseWithBiometrics
+import com.vayunmathur.library.biometric.unlockDatabaseWithBiometrics
 import com.vayunmathur.photos.data.VaultDatabase
 import com.vayunmathur.photos.data.VaultPhoto
 

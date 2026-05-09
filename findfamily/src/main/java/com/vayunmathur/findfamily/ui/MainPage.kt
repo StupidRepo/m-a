@@ -87,7 +87,7 @@ import com.vayunmathur.library.ui.IconDelete
 import com.vayunmathur.library.ui.IconEdit
 import com.vayunmathur.library.ui.IconNavigation
 import com.vayunmathur.library.ui.IconSave
-import com.vayunmathur.library.util.BiometricDatabaseHelper
+import com.vayunmathur.library.util.DatabaseHelper
 import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.util.ResultEffect
@@ -167,7 +167,7 @@ fun MainPage(
                 },
                 actions = {
                     if (selectedUserId == null && (selectedWaypointId == null || selectedWaypointId == 0L)) {
-                        val pass = remember { BiometricDatabaseHelper(context).getPassphrase(false) }
+                        val pass = remember { DatabaseHelper(context).getPassphrase() }
                         BackupButtons(
                             dbConfigs = listOf("passwords-db" to pass),
                             extraFiles = emptyList()

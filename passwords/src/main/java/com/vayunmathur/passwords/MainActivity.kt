@@ -14,7 +14,7 @@ import com.vayunmathur.library.util.ListPage
 import com.vayunmathur.library.util.MainNavigation
 import com.vayunmathur.library.util.buildDatabase
 import com.vayunmathur.library.util.rememberNavBackStack
-import com.vayunmathur.library.util.unlockDatabaseWithBiometrics
+import com.vayunmathur.library.biometric.unlockDatabaseWithBiometrics
 import com.vayunmathur.passwords.data.PasswordDatabase
 import com.vayunmathur.passwords.ui.MenuPage
 import com.vayunmathur.passwords.data.Password

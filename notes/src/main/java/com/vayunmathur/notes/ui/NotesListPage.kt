@@ -13,7 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.vayunmathur.library.ui.IconDelete
 import com.vayunmathur.library.ui.IconUpload
 import com.vayunmathur.library.ui.BackupButtons
-import com.vayunmathur.library.util.BiometricDatabaseHelper
+import com.vayunmathur.library.util.DatabaseHelper
 import androidx.compose.runtime.remember
 import com.vayunmathur.library.ui.ListPageR
 import com.vayunmathur.library.util.DatabaseViewModel
@@ -85,7 +85,7 @@ fun NotesListPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) 
         editPage = { Route.Note(0) },
         searchEnabled = true,
         otherActions = {
-            val pass = remember { BiometricDatabaseHelper(context).getPassphrase(false) }
+            val pass = remember { DatabaseHelper(context).getPassphrase() }
             BackupButtons(
                 dbConfigs = listOf("passwords-db" to pass),
                 extraFiles = emptyList()

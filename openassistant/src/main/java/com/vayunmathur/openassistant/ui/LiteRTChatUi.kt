@@ -47,7 +47,7 @@ import com.vayunmathur.library.ui.IconMenu
 import com.vayunmathur.library.ui.BackupButtons
 import com.vayunmathur.library.ui.IconDelete
 import com.vayunmathur.library.ui.IconCopy
-import com.vayunmathur.library.util.BiometricDatabaseHelper
+import com.vayunmathur.library.util.DatabaseHelper
 import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.parseMarkdown
 import com.vayunmathur.openassistant.util.copyUriToFile
@@ -146,7 +146,7 @@ fun LiteRTChatUi(backStack: NavBackStack<Route>, conversationId: Long, viewModel
                     CenterAlignedTopAppBar(
                         title = { Text(activeConversation?.title ?: newConv, fontWeight = FontWeight.Bold) },
                         actions = {
-                            val pass = remember { BiometricDatabaseHelper(context).getPassphrase(false) }
+                            val pass = remember { DatabaseHelper(context).getPassphrase() }
                             BackupButtons(
                                 dbConfigs = listOf("passwords-db" to pass),
                                 extraFiles = emptyList()

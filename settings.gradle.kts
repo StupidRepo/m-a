@@ -25,6 +25,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "apps"
 include(":library")
+include(":library:biometric")
 include(":calendar")
 include(":contacts")
 include(":pdf")

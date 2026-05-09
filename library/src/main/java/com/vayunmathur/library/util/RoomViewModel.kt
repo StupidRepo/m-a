@@ -3,11 +3,6 @@ package com.vayunmathur.library.util
 import android.content.Context
 import java.io.File
 import java.io.FileInputStream
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import android.util.Base64
-import androidx.biometric.BiometricManager
-import androidx.biometric.BiometricPrompt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -19,8 +14,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.core.content.ContextCompat
-import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.Dao
@@ -48,19 +41,12 @@ import kotlinx.datetime.LocalTime
 import kotlinx.serialization.json.Json
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.nio.charset.StandardCharsets
-import java.security.KeyStore
-import java.security.SecureRandom
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.reflect.KClass
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Instant
-import androidx.core.content.edit
 
 
 class DatabaseViewModel(val database: RoomDatabase, vararg daos: Pair<KClass<*>, TrueDao<*>>, val matchingDao: MatchingDao? = null) : ViewModel() {
@@ -387,14 +373,14 @@ inline fun <reified T : RoomDatabase> Context.buildDatabase(
 
         var password = encryptionPassword
         if (password == null) {
-            val helper = BiometricDatabaseHelper(this)
-            if (!helper.isKeyGenerated(false)) {
-                helper.generateKey(false)
-                val cipher = helper.getCipherForEncryption(false)
-                password = helper.createAndStorePassphrase(cipher, false)
+            val helper = DatabaseHelper(this)
+            if (!helper.isKeyGenerated()) {
+                helper.generateKey()
+                val cipher = helper.getCipherForEncryption()
+                password = helper.createAndStorePassphrase(cipher)
             } else {
-                val cipher = helper.getCipherForDecryption(false)
-                password = helper.decryptPassphrase(cipher, false)
+                val cipher = helper.getCipherForDecryption()
+                password = helper.decryptPassphrase(cipher)
             }
         }
 
@@ -498,145 +484,4 @@ class DefaultConverters {
     fun fromLocalTime(value: LocalTime) = value.toSecondOfDay()
     @TypeConverter
     fun toLocalTime(value: Int) = LocalTime.fromSecondOfDay(value)
-}
-
-class BiometricDatabaseHelper(val context: Context) {
-    private fun keyStoreAlias(useBiometrics: Boolean) = if (useBiometrics) "db_auth_key" else "db_no_auth_key"
-    private val sharedPrefsName = "secure_prefs"
-    private fun passphraseKey(useBiometrics: Boolean) = if (useBiometrics) "encrypted_passphrase" else "encrypted_passphrase_no_auth"
-    private fun ivKey(useBiometrics: Boolean) = if (useBiometrics) "passphrase_iv" else "passphrase_iv_no_auth"
-
-    fun isKeyGenerated(useBiometrics: Boolean): Boolean {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore")
-        keyStore.load(null)
-        return keyStore.containsAlias(keyStoreAlias(useBiometrics))
-    }
-
-    fun generateKey(useBiometrics: Boolean) {
-        val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        val builder = KeyGenParameterSpec.Builder(
-            keyStoreAlias(useBiometrics),
-            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-        )
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setUserAuthenticationRequired(useBiometrics)
-
-        if (useBiometrics) {
-            builder.setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
-            builder.setInvalidatedByBiometricEnrollment(false)
-        }
-
-        keyGenerator.init(builder.build())
-        keyGenerator.generateKey()
-    }
-
-    private fun getSecretKey(useBiometrics: Boolean): SecretKey {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore")
-        keyStore.load(null)
-        return keyStore.getKey(keyStoreAlias(useBiometrics), null) as SecretKey
-    }
-
-    fun createAndStorePassphrase(cipher: Cipher, useBiometrics: Boolean): String {
-        val random = SecureRandom()
-        val passphraseBytes = ByteArray(32)
-        random.nextBytes(passphraseBytes)
-        val passphrase = Base64.encodeToString(passphraseBytes, Base64.NO_WRAP)
-
-        val encryptedBytes = cipher.doFinal(passphrase.toByteArray(StandardCharsets.UTF_8))
-        val iv = cipher.iv
-
-        val prefs = context.getSharedPreferences(sharedPrefsName, Context.MODE_PRIVATE)
-        prefs.edit {
-            putString(passphraseKey(useBiometrics), Base64.encodeToString(encryptedBytes, Base64.NO_WRAP))
-                .putString(ivKey(useBiometrics), Base64.encodeToString(iv, Base64.NO_WRAP))
-        }
-
-        return passphrase
-    }
-
-    fun decryptPassphrase(cipher: Cipher, useBiometrics: Boolean): String {
-        val prefs = context.getSharedPreferences(sharedPrefsName, Context.MODE_PRIVATE)
-        val encryptedPassphrase = prefs.getString(passphraseKey(useBiometrics), null) ?: throw Exception("Passphrase not found")
-        val encryptedBytes = Base64.decode(encryptedPassphrase, Base64.NO_WRAP)
-        val decryptedBytes = cipher.doFinal(encryptedBytes)
-        return String(decryptedBytes, StandardCharsets.UTF_8)
-    }
-
-    fun getCipherForEncryption(useBiometrics: Boolean): Cipher {
-        val cipher = Cipher.getInstance("${KeyProperties.KEY_ALGORITHM_AES}/${KeyProperties.BLOCK_MODE_GCM}/${KeyProperties.ENCRYPTION_PADDING_NONE}")
-        cipher.init(Cipher.ENCRYPT_MODE, getSecretKey(useBiometrics))
-        return cipher
-    }
-
-    fun getCipherForDecryption(useBiometrics: Boolean): Cipher {
-        val prefs = context.getSharedPreferences(sharedPrefsName, Context.MODE_PRIVATE)
-        val ivBase64 = prefs.getString(ivKey(useBiometrics), null) ?: throw Exception("IV not found")
-        val iv = Base64.decode(ivBase64, Base64.NO_WRAP)
-        val cipher = Cipher.getInstance("${KeyProperties.KEY_ALGORITHM_AES}/${KeyProperties.BLOCK_MODE_GCM}/${KeyProperties.ENCRYPTION_PADDING_NONE}")
-        cipher.init(Cipher.DECRYPT_MODE, getSecretKey(useBiometrics), GCMParameterSpec(128, iv))
-        return cipher
-    }
-
-    fun getPassphrase(useBiometrics: Boolean): String {
-        return try {
-            decryptPassphrase(getCipherForDecryption(useBiometrics), useBiometrics)
-        } catch (e: Exception) {
-            ""
-        }
-    }
-}
-
-fun unlockDatabaseWithBiometrics(
-    activity: FragmentActivity,
-    onSuccess: (String) -> Unit,
-    onFailure: () -> Unit
-) {
-    val helper = BiometricDatabaseHelper(activity)
-    val executor = ContextCompat.getMainExecutor(activity)
-
-    if (!helper.isKeyGenerated(true)) {
-        helper.generateKey(true)
-        val biometricPrompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                val cipher = result.cryptoObject?.cipher!!
-                val passphrase = helper.createAndStorePassphrase(cipher, true)
-                onSuccess(passphrase)
-            }
-
-            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                onFailure()
-            }
-        })
-
-        val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Setup Secure Database")
-            .setSubtitle("Authenticate to create your secure encryption key")
-            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-            .setNegativeButtonText("Cancel")
-            .build()
-
-        biometricPrompt.authenticate(promptInfo, BiometricPrompt.CryptoObject(helper.getCipherForEncryption(true)))
-    } else {
-        val biometricPrompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                val cipher = result.cryptoObject?.cipher!!
-                val passphrase = helper.decryptPassphrase(cipher, true)
-                onSuccess(passphrase)
-            }
-
-            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                onFailure()
-            }
-        })
-
-        val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Unlock Database")
-            .setSubtitle("Authenticate to access your secure data")
-            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-            .setNegativeButtonText("Cancel")
-            .build()
-
-        biometricPrompt.authenticate(promptInfo, BiometricPrompt.CryptoObject(helper.getCipherForDecryption(true)))
-    }
 }

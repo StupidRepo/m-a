@@ -68,7 +68,7 @@ import com.vayunmathur.library.util.NavBackStack
 import android.content.pm.PackageManager
 import com.vayunmathur.library.util.DataStoreUtils
 import com.vayunmathur.library.util.buildDatabase
-import com.vayunmathur.library.util.unlockDatabaseWithBiometrics
+import com.vayunmathur.library.biometric.unlockDatabaseWithBiometrics
 import androidx.room.migration.Migration
 import kotlinx.coroutines.flow.onStart
 import com.vayunmathur.photos.LocalColumnCount

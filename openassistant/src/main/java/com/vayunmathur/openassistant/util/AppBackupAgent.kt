@@ -1,16 +1,16 @@
 package com.vayunmathur.openassistant.util
 
 import com.vayunmathur.library.util.BaseBackupAgent
-import com.vayunmathur.library.util.BiometricDatabaseHelper
+import com.vayunmathur.library.util.DatabaseHelper
 import java.io.File
 
 class AppBackupAgent : BaseBackupAgent() {
     override val dbConfigs: List<Pair<String, String>>
         get() {
-            val helper = BiometricDatabaseHelper(this)
-            return if (helper.isKeyGenerated(false)) {
+            val helper = DatabaseHelper(this)
+            return if (helper.isKeyGenerated()) {
                 try {
-                    val pass = helper.getPassphrase(false)
+                    val pass = helper.getPassphrase()
                     listOf("passwords-db" to pass)
                 } catch (e: Exception) {
                     emptyList()

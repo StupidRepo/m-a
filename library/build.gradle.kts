@@ -23,8 +23,6 @@ dependencies {
     implementRoom(libs)
     api("net.zetetic:sqlcipher-android:4.14.1")
     implementation("androidx.sqlite:sqlite:2.6.2")
-    implementation(libs.androidx.biometric)
-    implementation(libs.androidx.fragment.ktx)
 
     // work
     implementation(libs.androidx.work.runtime.ktx)
