@@ -48,8 +48,6 @@ import com.vayunmathur.findfamily.data.TemporaryLink
 import com.vayunmathur.findfamily.data.User
 import com.vayunmathur.findfamily.data.Waypoint
 import com.vayunmathur.findfamily.ui.MainPage
-import com.vayunmathur.findfamily.ui.UserPage
-import com.vayunmathur.findfamily.ui.WaypointEditPage
 import com.vayunmathur.findfamily.ui.dialogs.AddLinkDialog
 import com.vayunmathur.findfamily.ui.dialogs.AddPersonDialog
 import com.vayunmathur.findfamily.ui.SettingsPage
@@ -240,16 +238,10 @@ fun MissingFeaturesDialog(backStack: NavBackStack<Route>) {
 @Serializable
 sealed interface Route: NavKey {
     @Serializable
-    data object MainPage: Route
-
-    @Serializable
-    data class UserPage(val id: Long): Route
+    data class MainPage(val selectedUserId: Long? = null, val selectedWaypointId: Long? = null): Route
 
     @Serializable
     data class UserPageHistoryDatePicker(val initialDate: LocalDate): Route
-
-    @Serializable
-    data class WaypointEditPage(val id: Long): Route
 
     @Serializable
     data class AddPersonDialog(val id: Long? = null): Route
@@ -266,7 +258,7 @@ sealed interface Route: NavKey {
 
 @Composable
 fun Navigation(platform: Platform, viewModel: DatabaseViewModel, showMissingFeatures: Boolean) {
-    val backStack = rememberNavBackStack<Route>(Route.MainPage)
+    val backStack = rememberNavBackStack<Route>(Route.MainPage())
 
     LaunchedEffect(showMissingFeatures) {
         if (showMissingFeatures) {
@@ -276,13 +268,7 @@ fun Navigation(platform: Platform, viewModel: DatabaseViewModel, showMissingFeat
 
     MainNavigation(backStack) {
         entry<Route.MainPage> {
-            MainPage(platform, backStack, viewModel)
-        }
-        entry<Route.UserPage> {
-            UserPage(platform, backStack, viewModel, it.id)
-        }
-        entry<Route.WaypointEditPage> {
-            WaypointEditPage(backStack, viewModel, it.id)
+            MainPage(platform, backStack, viewModel, it.selectedUserId, it.selectedWaypointId)
         }
         entry<Route.UserPageHistoryDatePicker>(metadata = DialogPage()) {
             DatePickerDialog(backStack, "HistoryDatePicker", it.initialDate, maxDate = Clock.System.now().toLocalDateTime(

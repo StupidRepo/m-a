@@ -41,7 +41,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.vayunmathur.findfamily.R
-import com.vayunmathur.findfamily.Route
 import com.vayunmathur.findfamily.data.Coord
 import com.vayunmathur.findfamily.data.RequestStatus
 import com.vayunmathur.findfamily.data.User
@@ -79,9 +78,9 @@ private fun Position.toCoord() = Coord(latitude, longitude)
 
 @Composable
 fun MapView(
-    backStack: NavBackStack<Route>,
     viewModel: DatabaseViewModel,
-    navEnabled: Boolean,
+    onUserClick: (Long) -> Unit,
+    onMapClick: () -> Unit,
     selectedUser: SelectedUser? = null,
     selectedWaypoint: SelectedWaypoint? = null,
 ) {
@@ -150,7 +149,7 @@ fun MapView(
                     ornamentOptions = OrnamentOptions.AllDisabled
                 ),
                 onMapClick = { _, _ ->
-                    backStack.reset(Route.MainPage)
+                    onMapClick()
                     ClickResult.Pass
                 },
             )
@@ -203,9 +202,7 @@ fun MapView(
                             70.dp,
                             selectedUser != null && !selectedUser.isShowingPresent
                         ) {
-                            if (navEnabled) {
-                                backStack.add(Route.UserPage(user.id))
-                            }
+                            onUserClick(user.id)
                         }
                     }
                 }
