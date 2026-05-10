@@ -89,8 +89,8 @@ import kotlin.time.Instant
 import kotlin.time.toKotlinInstant
 
 data class VideoChapter(val time: Int, val title: String, val previewURL: String?)
-data class AudioStream(val url: String, val bitrate: Int, val language: String, val codec: String)
-data class VideoStream(val url: String, val width: Int, val height: Int, val bitrate: Int, val fps: Int, val quality: String, val codec: String)
+data class AudioStream(val url: String, val bitrate: Int, val language: String, val codec: String, val size: Long)
+data class VideoStream(val url: String, val width: Int, val height: Int, val bitrate: Int, val fps: Int, val quality: String, val codec: String, val size: Long)
 data class VideoData(val title: String, val views: Long, val duration: Long, val uploadDate: Instant, val thumbnailURL: String, val author: String, val authorURL: String, val authorThumbnail: String)
 data class Comment(val text: String, val author: String, val likes: Int, val dislikes: Int)
 
@@ -154,7 +154,8 @@ fun VideoPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, vide
                             stream.bitrate,
                             stream.fps,
                             "${stream.height}p",
-                            codec
+                            codec,
+                            stream.itagItem?.contentLength ?: 0L
                         )
                     }.sortedWith(
                         compareByDescending<VideoStream> { it.height }
@@ -178,7 +179,8 @@ fun VideoPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, vide
                             stream.content,
                             stream.bitrate,
                             stream.audioLocale?.language ?: "Default",
-                            codec
+                            codec,
+                            stream.itagItem?.contentLength ?: 0L
                         )
                     }.sortedWith(
                         compareByDescending<AudioStream> { it.bitrate }
@@ -192,8 +194,8 @@ fun VideoPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, vide
                     )
                 } else {
                     val video = downloadedVideo!!
-                    videoStreams = listOf(VideoStream(video.filePath, 1920, 1080, 0, 30, "Downloaded", "avc"))
-                    audioStreams = if (video.audioPath != null) listOf(AudioStream(video.audioPath, 0, "Default", "aac")) else emptyList()
+                    videoStreams = listOf(VideoStream(video.filePath, 1920, 1080, 0, 30, "Downloaded", "avc", 0L))
+                    audioStreams = if (video.audioPath != null) listOf(AudioStream(video.audioPath, 0, "Default", "aac", 0L)) else emptyList()
                     segments = emptyList()
                 }
 
@@ -245,8 +247,8 @@ fun VideoPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, vide
                     "",
                     ""
                 )
-                videoStreams = listOf(VideoStream(video.filePath, 1920, 1080, 0, 30, "Downloaded", "avc"))
-                audioStreams = if (video.audioPath != null) listOf(AudioStream(video.audioPath, 0, "Default", "aac")) else emptyList()
+                videoStreams = listOf(VideoStream(video.filePath, 1920, 1080, 0, 30, "Downloaded", "avc", 0L))
+                audioStreams = if (video.audioPath != null) listOf(AudioStream(video.audioPath, 0, "Default", "aac", 0L)) else emptyList()
             } else {
                 error = true
                 e.printStackTrace()
@@ -257,8 +259,8 @@ fun VideoPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, vide
     LaunchedEffect(downloadedVideo) {
         if (downloadedVideo != null) {
             val video = downloadedVideo!!
-            videoStreams = listOf(VideoStream(video.filePath, 1920, 1080, 0, 30, "Downloaded", "avc"))
-            audioStreams = if (video.audioPath != null) listOf(AudioStream(video.audioPath, 0, "Default", "aac")) else emptyList()
+            videoStreams = listOf(VideoStream(video.filePath, 1920, 1080, 0, 30, "Downloaded", "avc", 0L))
+            audioStreams = if (video.audioPath != null) listOf(AudioStream(video.audioPath, 0, "Default", "aac", 0L)) else emptyList()
             segments = emptyList()
         }
     }
@@ -398,7 +400,7 @@ fun VideoDetails(
                         onExpandedChange = { videoExpanded = it }
                     ) {
                         OutlinedTextField(
-                            value = "${selectedVideoStream.quality} (${getVideoCodecName(selectedVideoStream.codec)})",
+                            value = "${selectedVideoStream.quality} (${getVideoCodecName(selectedVideoStream.codec)}) - ${formatSize(selectedVideoStream.size)}",
                             onValueChange = {},
                             readOnly = true,
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = videoExpanded) },
@@ -411,7 +413,7 @@ fun VideoDetails(
                         ) {
                             videoStreams.forEach { stream ->
                                 DropdownMenuItem(
-                                    text = { Text("${stream.quality} (${getVideoCodecName(stream.codec)})") },
+                                    text = { Text("${stream.quality} (${getVideoCodecName(stream.codec)}) - ${formatSize(stream.size)}") },
                                     onClick = {
                                         selectedVideoStream = stream
                                         videoExpanded = false
@@ -464,7 +466,7 @@ fun VideoDetails(
                             onExpandedChange = { audioExpanded = it }
                         ) {
                             OutlinedTextField(
-                                value = selectedAudioStream?.let { "${it.bitrate / 1000} kbps (${getAudioCodecName(it.codec)})" } ?: "None",
+                                value = selectedAudioStream?.let { "${it.bitrate / 1000} kbps (${getAudioCodecName(it.codec)}) - ${formatSize(it.size)}" } ?: "None",
                                 onValueChange = {},
                                 readOnly = true,
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = audioExpanded) },
@@ -477,7 +479,7 @@ fun VideoDetails(
                             ) {
                                 filteredAudioStreams.forEach { stream ->
                                     DropdownMenuItem(
-                                        text = { Text("${stream.bitrate / 1000} kbps (${getAudioCodecName(stream.codec)})") },
+                                        text = { Text("${stream.bitrate / 1000} kbps (${getAudioCodecName(stream.codec)}) - ${formatSize(stream.size)}") },
                                         onClick = {
                                             selectedAudioStream = stream
                                             audioExpanded = false
@@ -643,8 +645,8 @@ fun String.fromHTML(): String {
 fun getVideoCodecName(codec: String): String {
     return when {
         codec.contains("av01", ignoreCase = true) -> "av1"
-        codec.contains("vp9", ignoreCase = true) -> "vp9"
-        codec.contains("avc", ignoreCase = true) -> "avc"
+        codec.contains("vp9", ignoreCase = true) || codec.contains("vp09", ignoreCase = true) -> "vp9"
+        codec.contains("avc", ignoreCase = true) || codec.contains("h264", ignoreCase = true) -> "avc"
         else -> codec
     }
 }
@@ -654,5 +656,15 @@ fun getAudioCodecName(codec: String): String {
         codec.contains("opus", ignoreCase = true) -> "opus"
         codec.contains("mp4a", ignoreCase = true) || codec.contains("aac", ignoreCase = true) -> "aac"
         else -> codec
+    }
+}
+
+fun formatSize(bytes: Long): String {
+    return when {
+        bytes >= 1024L * 1024 * 1024 -> "%.1f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
+        bytes >= 1024L * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+        bytes >= 1024L -> "%.1f KB".format(bytes / 1024.0)
+        bytes > 0 -> "$bytes B"
+        else -> "Unknown"
     }
 }
