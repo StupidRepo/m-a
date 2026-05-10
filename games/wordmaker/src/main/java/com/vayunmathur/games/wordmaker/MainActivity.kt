@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -144,7 +145,7 @@ fun rememberAchievementsManager(levelDataStore: LevelDataStore): AchievementsMan
 @Composable
 fun WordMakerGameLoader(backStack: NavBackStack<Route>, levelDataStore: LevelDataStore) {
     val context = LocalContext.current
-    val currentLevel by levelDataStore.currentLevel.collectAsState(initial = 1)
+    val currentLevel = 812 //by levelDataStore.currentLevel.collectAsState(initial = 1)
     var crosswordData by remember { mutableStateOf<CrosswordData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val dictionary by remember { mutableStateOf(Dictionary()) }
@@ -300,7 +301,7 @@ fun WordGameScreen(
         Modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.app_name)) },
+                title = { Text(stringResource(R.string.level_number, currentLevel)) },
                 actions = {
                     IconButton(onClick = onOpenGameCenter) {
                         Icon(painterResource(id = android.R.drawable.btn_star_big_on), "Achievements")
@@ -324,11 +325,6 @@ fun WordGameScreen(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = stringResource(R.string.level_number, currentLevel),
-                    style = typography.headlineMedium,
-                    modifier = Modifier.padding(16.dp)
-                )
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
@@ -576,48 +572,71 @@ fun CrosswordBoard(
     }
     val (size, fontSize) = Pair(35.dp, 18.sp)
 
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    val state = rememberTransformableState { zoomChange, offsetChange, _ ->
-        scale *= zoomChange
-        offset += offsetChange
-        scaleUpdated(scale)
-    }
-
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .clip(RectangleShape)
-            .transformable(state = state)
     ) {
-        Column(
-            modifier = Modifier.align(Alignment.Center)
-                .wrapContentSize(align = Alignment.TopStart, unbounded = true)
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y
-                ) // 3. Apply transformations
+        val numRows = crosswordData.gridStructure.size
+        val numCols = if (numRows > 0) crosswordData.gridStructure[0].length else 0
+
+        val boardWidth = 37.dp * numCols
+        val boardHeight = 37.dp * numRows
+
+        val initialScale = remember(crosswordData, maxWidth, maxHeight) {
+            val scaleX = if (boardWidth.value > 0) maxWidth / boardWidth else 1f
+            val scaleY = if (boardHeight.value > 0) maxHeight / boardHeight else 1f
+            minOf(scaleX, scaleY, 1f)
+        }
+
+        var scale by remember(crosswordData) { mutableFloatStateOf(initialScale) }
+        var offset by remember(crosswordData) { mutableStateOf(Offset.Zero) }
+
+        // Ensure parent knows the current scale, especially the initial one
+        LaunchedEffect(scale) {
+            scaleUpdated(scale)
+        }
+
+        val state = rememberTransformableState { zoomChange, offsetChange, _ ->
+            scale *= zoomChange
+            offset += offsetChange
+            scaleUpdated(scale)
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .transformable(state = state)
         ) {
-            crosswordData.gridStructure.forEachIndexed { y, rowString ->
-                Row {
-                    rowString.forEachIndexed { x, char ->
-                        if (char != '.') {
-                            val letter = allCharPositions[Pair(y, x)]
-                            SurfaceText(
-                                Modifier.padding(1.dp)
-                                    .onGloballyPositioned {
-                                        onCellPositioned(Pair(y, x), it.localToRoot(Offset.Zero))
-                                    }.clickable(enabled = letter != null) {
-                                        onCellClicked(y, x)
-                                    },
-                                RoundedCornerShape(4.dp),
-                                if (letter != null) colorScheme.primaryContainer else colorScheme.secondaryContainer,
-                                letter?.toString() ?: " ", Modifier, FontWeight.Bold, fontSize, size
-                            )
-                        } else {
-                            Box(Modifier.padding(1.dp).size(size))
+            Column(
+                modifier = Modifier.align(Alignment.Center)
+                    .wrapContentSize(align = Alignment.TopStart, unbounded = true)
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y
+                    ) // 3. Apply transformations
+            ) {
+                crosswordData.gridStructure.forEachIndexed { y, rowString ->
+                    Row {
+                        rowString.forEachIndexed { x, char ->
+                            if (char != '.') {
+                                val letter = allCharPositions[Pair(y, x)]
+                                SurfaceText(
+                                    Modifier.padding(1.dp)
+                                        .onGloballyPositioned {
+                                            onCellPositioned(Pair(y, x), it.localToRoot(Offset.Zero))
+                                        }.clickable(enabled = letter != null) {
+                                            onCellClicked(y, x)
+                                        },
+                                    RoundedCornerShape(4.dp),
+                                    if (letter != null) colorScheme.primaryContainer else colorScheme.secondaryContainer,
+                                    letter?.toString() ?: " ", Modifier, FontWeight.Bold, fontSize, size
+                                )
+                            } else {
+                                Box(Modifier.padding(1.dp).size(size))
+                            }
                         }
                     }
                 }
