@@ -145,7 +145,7 @@ fun rememberAchievementsManager(levelDataStore: LevelDataStore): AchievementsMan
 @Composable
 fun WordMakerGameLoader(backStack: NavBackStack<Route>, levelDataStore: LevelDataStore) {
     val context = LocalContext.current
-    val currentLevel = 812 //by levelDataStore.currentLevel.collectAsState(initial = 1)
+    val currentLevel by levelDataStore.currentLevel.collectAsState(initial = 1)
     var crosswordData by remember { mutableStateOf<CrosswordData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val dictionary by remember { mutableStateOf(Dictionary()) }
