@@ -6,6 +6,7 @@ import com.vayunmathur.library.network.NetworkClient
 import com.vayunmathur.maps.R
 import com.vayunmathur.maps.data.SpecificFeature
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maplibre.spatialk.geojson.Position
@@ -20,19 +21,37 @@ object OfflineRouter {
 
     private external fun init(basePath: String): Boolean
     private external fun findRouteNative(sLat: Double, sLon: Double, eLat: Double, eLon: Double, mode: Int): Array<RawStep>
-    private external fun updateTrafficNative(zoneId: Int, edgeIds: IntArray, speeds: ByteArray)
+    private external fun updateTrafficNative(zoneId: Int, edgeIds: IntArray, speeds: ByteArray, packedSquare: Int)
+    private external fun getTrafficSegmentsNative(): DoubleArray
+    private external fun notifyTrafficFetchFinishedNative(packedSquare: Int)
+
+    data class TrafficSegment(val start: Position, val end: Position, val speedRatio: Double)
+    private val _trafficSegments = kotlinx.coroutines.flow.MutableStateFlow<List<TrafficSegment>>(emptyList())
+    val trafficSegments = _trafficSegments.asStateFlow()
+
+    fun updateTrafficView() {
+        val raw = getTrafficSegmentsNative()
+        val segments = mutableListOf<TrafficSegment>()
+        for (i in raw.indices step 5) {
+            if (i + 4 >= raw.size) break
+            segments.add(TrafficSegment(Position(raw[i+1], raw[i]), Position(raw[i+3], raw[i+2]), raw[i+4]))
+        }
+        _trafficSegments.value = segments
+    }
+
     private external fun ensureTrafficLoadedNative(lat: Double, lon: Double)
 
     private val trafficScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO)
 
     @Keep
-    private fun fetchTrafficData(minLat: Double, minLon: Double, maxLat: Double, maxLon: Double, zoneId: Int) {
-        Log.d("TRAFFIC_DATA", "fetchTrafficData for bbox ($minLat,$minLon)-($maxLat,$maxLon) zone=$zoneId")
-        trafficScope.launch {
-            try {
+    private fun fetchTrafficData(minLat: Double, minLon: Double, maxLat: Double, maxLon: Double, zoneId: Int, packedSquare: Int) {
+        Log.d("TRAFFIC_DATA", "fetchTrafficData START: bbox ($minLat,$minLon)-($maxLat,$maxLon) zone=$zoneId packed=$packedSquare")
+        try {
+            kotlinx.coroutines.runBlocking(Dispatchers.IO) {
                 val (status, bytes) = NetworkClient.performRequestBytes(
                     url = "https://api.vayunmathur.com/maps/traffic?min_lat=$minLat&min_lon=$minLon&max_lat=$maxLat&max_lon=$maxLon"
                 )
+                Log.d("TRAFFIC_DATA", "fetchTrafficData NETWORK DONE: status=$status, size=${bytes.size}")
                 if (status == 200 && bytes.size >= 5) {
                     val n = bytes.size / 5
                     val edgeIds = IntArray(n)
@@ -40,12 +59,19 @@ object OfflineRouter {
                     for (i in 0 until n) edgeIds[i] = buffer.int
                     val speeds = ByteArray(n)
                     buffer.get(speeds)
-                    updateTrafficNative(zoneId, edgeIds, speeds)
+                    Log.d("TRAFFIC_DATA", "fetchTrafficData PROCESSING: $n edges")
+                    updateTrafficNative(zoneId, edgeIds, speeds, packedSquare)
+                    updateTrafficView()
+                } else {
+                    Log.w("TRAFFIC_DATA", "fetchTrafficData NO DATA: status=$status")
+                    notifyTrafficFetchFinishedNative(packedSquare)
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
+        } catch (e: Exception) {
+            Log.e("TRAFFIC_DATA", "fetchTrafficData ERROR", e)
+            notifyTrafficFetchFinishedNative(packedSquare)
         }
+        Log.d("TRAFFIC_DATA", "fetchTrafficData END: packed=$packedSquare")
     }
 
     class RawStep @Keep constructor(

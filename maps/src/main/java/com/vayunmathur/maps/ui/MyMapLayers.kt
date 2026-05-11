@@ -1,4 +1,5 @@
 package com.vayunmathur.maps.ui
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -9,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vayunmathur.maps.data.CountryMap
+import com.vayunmathur.maps.util.OfflineRouter
 import com.vayunmathur.maps.util.RouteService
 import com.vayunmathur.maps.data.TransitRoute
 import com.vayunmathur.maps.data.Feature1
@@ -39,6 +41,10 @@ import org.maplibre.spatialk.geojson.Position
 fun MyMapLayers(selectedFeature: SpecificFeature?, route: RouteService.RouteType?) {
     var routeSource by remember { mutableStateOf<GeoJsonSource?>(null) }
     var outlineSource by remember { mutableStateOf<GeoJsonSource?>(null) }
+    var trafficSource by remember { mutableStateOf<GeoJsonSource?>(null) }
+
+    val trafficSegments by OfflineRouter.trafficSegments.collectAsState()
+
     LaunchedEffect(Unit) {
         outlineSource = GeoJsonSource("selected-country-geojson", GeoJsonData.Features(
             Feature(Polygon(
@@ -54,8 +60,39 @@ fun MyMapLayers(selectedFeature: SpecificFeature?, route: RouteService.RouteType
             ), JsonObject(emptyMap()))), GeoJsonOptions())
         routeSource = GeoJsonSource("route-geojson", GeoJsonData.Features(Feature1(
             LineString(listOf(Position(0.0, 0.0),Position(0.0, 0.0))), JsonObject(emptyMap()))), GeoJsonOptions())
-
+        trafficSource = GeoJsonSource("traffic-geojson", GeoJsonData.Features(Feature1(
+            LineString(listOf(Position(0.0, 0.0),Position(0.0, 0.0))), JsonObject(emptyMap()))), GeoJsonOptions())
     }
+
+    LaunchedEffect(trafficSegments) {
+        val features = if (trafficSegments.isEmpty()) {
+            listOf(Feature1(LineString(listOf(Position(0.0, 0.0), Position(0.0, 0.0))), JsonObject(emptyMap())))
+        } else {
+            trafficSegments.map { segment ->
+                val color = when {
+                    segment.speedRatio < 0.5 -> "#FF0000" // Red
+                    segment.speedRatio < 0.9 -> "#FFFF00" // Yellow
+                    else -> "#00FF00" // Green
+                }
+                Feature1(
+                    LineString(listOf(segment.start, segment.end)),
+                    JsonObject(mapOf("color" to JsonPrimitive(color)))
+                )
+            }
+        }
+        trafficSource?.setData(GeoJsonData.Features(FeatureCollection(features)))
+    }
+
+    trafficSource?.let { source ->
+        LineLayer(
+            "traffic-layer",
+            source,
+            color = feature["color"].cast<StringValue>().convertToColor(),
+            width = const(2.dp),
+            cap = const(LineCap.Round)
+        )
+    }
+
     outlineSource?.let { outlineSource ->
         routeSource?.let { routeSource ->
             val context = LocalContext.current

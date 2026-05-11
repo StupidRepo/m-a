@@ -7,6 +7,7 @@
 #include <cmath>
 #include <algorithm>
 #include <mutex>
+#include <set>
 #include <android/log.h>
 
 #include "scratchpad.h"
@@ -17,7 +18,7 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 // User-specified Travel Mode mapping
-enum TravelMode { DRIVING = 0, WALK = 2, BICYCLE = 3 };
+enum TravelMode { DRIVING = 0, WenALK = 2, BICYCLE = 3 };
 
 // Road types based on OpenStreetMap tags
 enum RoadType {
@@ -64,6 +65,7 @@ static RoutingScratchpad g_scratchpad;
 static TrafficPageTable g_traffic_zones[NUM_ZONES];
 static RadixHeap g_heap; // Only one heap needed for unidirectional
 
+static std::vector<double> g_all_traffic_segments;
 static std::vector<uint32_t> g_requested_squares; // Packed (lat_idx << 16 | lon_idx)
 static std::mutex g_traffic_mutex;
 
@@ -79,37 +81,62 @@ uint64_t latlng_to_spatial(double lat, double lon) {
     return res;
 }
 
-bool is_square_requested(int32_t lat_idx, int32_t lon_idx) {
-    uint32_t packed = ((uint32_t)(lat_idx + 360) << 16) | (uint32_t)(lon_idx + 720);
-    std::lock_guard<std::mutex> lock(g_traffic_mutex);
-    return std::find(g_requested_squares.begin(), g_requested_squares.end(), packed) != g_requested_squares.end();
+inline bool is_zone_mapped(int zone) {
+    return zone >= 0 && zone < NUM_ZONES && g_node_zones[zone] != nullptr;
 }
 
-void mark_square_requested(int32_t lat_idx, int32_t lon_idx) {
-    uint32_t packed = ((uint32_t)(lat_idx + 360) << 16) | (uint32_t)(lon_idx + 720);
-    std::lock_guard<std::mutex> lock(g_traffic_mutex);
-    g_requested_squares.push_back(packed);
+inline const NodeMaster& get_node(uint32_t global_id) {
+    int zone = 0;
+    for (int i = 0; i < 64; ++i) {
+        if (global_id < g_zone_offsets[i+1]) { zone = i; break; }
+    }
+    if (!g_node_zones[zone]) {
+        static NodeMaster null_node = {0,0,0,0};
+        return null_node;
+    }
+    return g_node_zones[zone][global_id - g_zone_offsets[zone]];
+}
+
+inline uint32_t find_node_idx_for_edge(int zone, uint32_t local_edge_idx) {
+    if (!is_zone_mapped(zone)) return 0;
+    uint32_t node_count = g_zone_offsets[zone + 1] - g_zone_offsets[zone];
+    int32_t low = 0, high = (int32_t)node_count - 1;
+    uint32_t res = 0;
+    while (low <= high) {
+        int32_t mid = low + (high - low) / 2;
+        if (g_node_zones[zone][mid].edge_ptr <= local_edge_idx) {
+            res = (uint32_t)mid;
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+    return res;
 }
 
 void ensure_traffic_loaded(JNIEnv* env, jobject thiz, int32_t lat_e7, int32_t lon_e7) {
     int32_t lat_idx = (int32_t)floor(lat_e7 * 1e-7);
     int32_t lon_idx = (int32_t)floor(lon_e7 * 1e-7);
+    uint32_t packed = ((uint32_t)(lat_idx + 360) << 16) | (uint32_t)(lon_idx + 720);
 
-    if (is_square_requested(lat_idx, lon_idx)) return;
-    mark_square_requested(lat_idx, lon_idx);
+    {
+        std::lock_guard<std::mutex> lock(g_traffic_mutex);
+        if (std::find(g_requested_squares.begin(), g_requested_squares.end(), packed) != g_requested_squares.end()) {
+            return;
+        }
+        LOGD("ensure_traffic_loaded: REQUESTING square %u", packed);
+        g_requested_squares.push_back(packed);
+    }
 
     uint64_t spatial = latlng_to_spatial(lat_e7 * 1e-7, lon_e7 * 1e-7);
     int zone_id = (int)((spatial >> 58) & 0x3F);
 
-    double min_lat = (double)lat_idx;
-    double min_lon = (double)lon_idx;
-    double max_lat = min_lat + 1.0;
-    double max_lon = min_lon + 1.0;
-
     jclass clazz = env->GetObjectClass(thiz);
-    jmethodID method = env->GetMethodID(clazz, "fetchTrafficData", "(DDDDI)V");
+    jmethodID method = env->GetMethodID(clazz, "fetchTrafficData", "(DDDDII)V");
     if (method) {
-        env->CallVoidMethod(thiz, method, min_lat, min_lon, max_lat, max_lon, zone_id);
+        LOGD("ensure_traffic_loaded: CALLING fetchTrafficData for square %u (zone %d)", packed, zone_id);
+        env->CallVoidMethod(thiz, method, (double)lat_idx, (double)lon_idx, (double)lat_idx + 1.0, (double)lon_idx + 1.0, zone_id, (jint)packed);
+        LOGD("ensure_traffic_loaded: RETURNED from fetchTrafficData for square %u", packed);
     }
 }
 
@@ -127,19 +154,6 @@ inline int get_zone_for_id(uint32_t global_id) {
         if (global_id < g_zone_offsets[i+1]) return i;
     }
     return -1;
-}
-
-inline bool is_zone_mapped(int zone) {
-    return zone >= 0 && zone < NUM_ZONES && g_node_zones[zone] != nullptr;
-}
-
-inline const NodeMaster& get_node(uint32_t global_id) {
-    int zone = get_zone_for_id(global_id);
-    if (zone < 0 || !g_node_zones[zone]) {
-        static NodeMaster null_node = {0,0,0,0};
-        return null_node;
-    }
-    return g_node_zones[zone][global_id - g_zone_offsets[zone]];
 }
 
 // --- GEOMETRY ---
@@ -347,7 +361,6 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
     std::vector<StepData> steps; double last_bearing = 0;
     int total_edges = 0;
     int traffic_edges = 0;
-
     for (size_t i = 0; i < path.size() - 1; ++i) {
         uint32_t u = path[i], v = path[i+1];
         int z_u = get_zone_for_id(u); if (z_u < 0) continue;
@@ -366,25 +379,20 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
                 resolved_edge_idx = k; break;
             }
         }
-
         total_edges++;
         uint8_t traffic_speed = 0;
         if (resolved_edge_idx != 0xFFFFFFFF) traffic_speed = g_traffic_zones[z_u].get_speed(resolved_edge_idx);
         if (traffic_speed > 0) traffic_edges++;
-
         double ratio = 1.0;
         if (traffic_speed > 0 && edge_limit > 0) ratio = (double)traffic_speed / edge_limit;
-
         if (edge_dist_mm == 0) edge_dist_mm = accurate_dist_mm(node_u.lat_e7, node_u.lon_e7, node_v.lat_e7, node_v.lon_e7);
         uint32_t edge_time_10ms = get_edge_time_10ms(z_u, resolved_edge_idx, edge_dist_mm, edge_type, edge_limit, mode);
         double current_bearing = get_bearing(node_u.lat_e7, node_u.lon_e7, node_v.lat_e7, node_v.lon_e7);
-
         auto get_ratio_cat = [](double r) {
             if (r < 0.5) return 0;
             if (r < 0.9) return 1;
             return 2;
         };
-
         if (steps.empty() || current_name_off != steps.back().name_off || get_ratio_cat(ratio) != get_ratio_cat(steps.back().speed_ratio)) {
             int maneuver = steps.empty() ? 0 : get_maneuver(last_bearing, current_bearing);
             steps.push_back({current_name_off, 0, 0, {}, maneuver, ratio});
@@ -394,12 +402,10 @@ jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) 
         steps.back().coords.push_back(node_v.lon_e7 / 1e7); steps.back().coords.push_back(node_v.lat_e7 / 1e7);
         last_bearing = current_bearing;
     }
-
     if (total_edges > 0) {
         double percent = (double)traffic_edges / total_edges * 100.0;
         LOGD("Path traffic stats: %d/%d edges have traffic data (%.2f%%)", traffic_edges, total_edges, percent);
     }
-
     jclass stepClass = env->FindClass("com/vayunmathur/maps/util/OfflineRouter$RawStep");
     jmethodID stepCtor = env->GetMethodID(stepClass, "<init>", "(ILjava/lang/String;JJ[DD)V");
     jobjectArray res = env->NewObjectArray(steps.size(), stepClass, nullptr);
@@ -476,22 +482,50 @@ Java_com_vayunmathur_maps_util_OfflineRouter_findRouteNative(JNIEnv* env, jobjec
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_vayunmathur_maps_util_OfflineRouter_updateTrafficNative(JNIEnv* env, jobject thiz, jint zone_id, jintArray edge_ids, jbyteArray speeds) {
+Java_com_vayunmathur_maps_util_OfflineRouter_updateTrafficNative(JNIEnv* env, jobject thiz, jint zone_id, jintArray edge_ids, jbyteArray speeds, jint packed_square) {
     jsize len = env->GetArrayLength(edge_ids); jint* ids_ptr = env->GetIntArrayElements(edge_ids, nullptr);
     jbyte* speeds_ptr = env->GetByteArrayElements(speeds, nullptr);
+    LOGD("updateTrafficNative START: zone %d, count %d, packed %u", (int)zone_id, (int)len, (uint32_t)packed_square);
     if (zone_id >= 0 && zone_id < NUM_ZONES) {
         std::lock_guard<std::mutex> lock(g_traffic_mutex);
+        size_t total_edges_in_zone = g_edge_count_in_zone[zone_id];
         for (jsize i = 0; i < len; i++) {
             uint32_t local_id = (uint32_t)ids_ptr[i]; uint8_t speed = (uint8_t)speeds_ptr[i];
             g_traffic_zones[zone_id].set_speed(local_id, speed);
+
+            if (g_node_zones[zone_id] && local_id < total_edges_in_zone) {
+                uint32_t local_node_idx = find_node_idx_for_edge(zone_id, local_id);
+                const NodeMaster& node_u = g_node_zones[zone_id][local_node_idx];
+                const Edge& edge = g_edge_zones[zone_id][local_id];
+                int z_v = get_zone_for_id(edge.target);
+                if (is_zone_mapped(z_v)) {
+                    const NodeMaster& node_v = get_node(edge.target);
+                    double ratio = (edge.speed_limit > 0) ? (double)speed / edge.speed_limit : 1.0;
+                    g_all_traffic_segments.push_back(node_u.lat_e7 * 1e-7);
+                    g_all_traffic_segments.push_back(node_u.lon_e7 * 1e-7);
+                    g_all_traffic_segments.push_back(node_v.lat_e7 * 1e-7);
+                    g_all_traffic_segments.push_back(node_v.lon_e7 * 1e-7);
+                    g_all_traffic_segments.push_back(ratio);
+                }
+            }
         }
     }
+    LOGD("updateTrafficNative END: packed %u", (uint32_t)packed_square);
     env->ReleaseIntArrayElements(edge_ids, ids_ptr, JNI_ABORT); env->ReleaseByteArrayElements(speeds, speeds_ptr, JNI_ABORT);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_vayunmathur_maps_util_OfflineRouter_notifyTrafficFetchFinishedNative(JNIEnv* env, jobject thiz, jint packed_square) {
+    LOGD("notifyTrafficFetchFinishedNative: packed %u", (uint32_t)packed_square);
 }
 
 extern "C" JNIEXPORT jdoubleArray JNICALL
 Java_com_vayunmathur_maps_util_OfflineRouter_getTrafficSegmentsNative(JNIEnv* env, jobject thiz) {
-    jdoubleArray jRes = env->NewDoubleArray(0);
+    std::lock_guard<std::mutex> lock(g_traffic_mutex);
+    size_t count = g_all_traffic_segments.size();
+    if (count > 250000) count = 250000;
+    jdoubleArray jRes = env->NewDoubleArray(count);
+    if (count > 0) env->SetDoubleArrayRegion(jRes, 0, count, g_all_traffic_segments.data());
     return jRes;
 }
 

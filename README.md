@@ -46,8 +46,6 @@ iOS: https://apps.apple.com/us/app/find-family-secure-private/id6760863634
 
 Note: initiating cross-platform sharing only works in v2.2.0. After sharing is started, you can upgrade to the latest version. The permissions button in v2.2.0 does not work - so you will have to manually enable them in settings app
 
-Note: GrapheneOS users must enable network location and geocoder in order to use this app.
-
 Note for iOS users: there is a known bug where you may have to pick contact names twice / wait a few seconds before picking
 
 ### Features:
