@@ -71,4 +71,6 @@
     <string name="delete_selected_contacts_title">Usuń wybrane kontakty</string>
     <string name="delete_selected_contacts_confirm">Czy na pewno chcesz usunąć %1$d wybranych kontaktów? Tej czynności nie można cofnąć.</string>
     <string name="selected_count">%1$d wybrano</string>
+    <string name="show_account_labels">Pokaż konta kontaktów</string>
+    <string name="display">Wyświetl</string>
 </resources>
