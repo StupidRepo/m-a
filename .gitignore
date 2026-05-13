@@ -16,3 +16,4 @@ release/
 .cxx
 local.properties
 .kotlin/
+*.env
