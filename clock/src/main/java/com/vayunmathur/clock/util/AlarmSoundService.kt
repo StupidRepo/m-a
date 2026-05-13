@@ -31,8 +31,12 @@ class AlarmSoundService : Service() {
         startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
 
         // 4. Now handle the hardware
-        playAlarm()
-        startVibration()
+        if (mediaPlayer == null) {
+            playAlarm()
+        }
+        if (vibrator == null) {
+            startVibration()
+        }
 
         return START_STICKY
     }

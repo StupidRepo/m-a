@@ -63,7 +63,6 @@ class AlarmActivity : ComponentActivity() {
         km.requestDismissKeyguard(this, null)
 
         val db = buildDatabase<ClockDatabase>()
-        startForegroundService(Intent(this, AlarmSoundService::class.java))
 
         setContent {
             val alarm by androidx.compose.runtime.produceState<com.vayunmathur.clock.data.Alarm?>(initialValue = null) {
