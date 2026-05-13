@@ -90,6 +90,12 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
                 abiFilters.add("arm64-v8a")
             }
         }
+        create("dev") {
+            initWith(getByName("release"))
+            isMinifyEnabled = false
+            isShrinkResources = false
+            matchingFallbacks += listOf("release")
+        }
     }
 }
 
