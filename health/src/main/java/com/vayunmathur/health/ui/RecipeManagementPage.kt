@@ -4,12 +4,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.vayunmathur.health.R
 import com.vayunmathur.health.Route
@@ -199,6 +201,8 @@ fun RecipeEditorPage(backStack: NavBackStack<Route>, recipeId: String? = null) {
     var recipeName by remember { mutableStateOf("") }
     var recipeIngredients by remember { mutableStateOf(listOf<RecipeIngredientData>()) }
     var showSearch by remember { mutableStateOf(false) }
+    var editingIngredientData by remember { mutableStateOf<RecipeIngredientData?>(null) }
+    var isAddingNewIngredient by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // Load existing recipe if editing
@@ -225,10 +229,39 @@ fun RecipeEditorPage(backStack: NavBackStack<Route>, recipeId: String? = null) {
             includeLocal = true,
             onDismiss = { showSearch = false },
             onIngredientSelected = { ingredient ->
-                // Add default 100g unit
-                val unit = ServingUnit(id = UUID.randomUUID().toString(), ingredientId = ingredient.id, name = "g", grams = 1.0)
-                recipeIngredients = recipeIngredients + RecipeIngredientData(ingredient, unit, 100.0)
                 showSearch = false
+                // Default to 100g
+                editingIngredientData = RecipeIngredientData(
+                    ingredient,
+                    ServingUnit(id = UUID.randomUUID().toString(), ingredientId = ingredient.id, name = "g", grams = 1.0),
+                    100.0
+                )
+                isAddingNewIngredient = true
+            }
+        )
+    }
+
+    if (editingIngredientData != null) {
+        IngredientQuantityDialog(
+            ingredient = editingIngredientData!!.ingredient,
+            initialQuantity = editingIngredientData!!.quantity,
+            initialUnit = editingIngredientData!!.unit,
+            onDismiss = {
+                editingIngredientData = null
+                isAddingNewIngredient = false
+            },
+            onConfirm = { quantity, unit ->
+                if (isAddingNewIngredient) {
+                    recipeIngredients = recipeIngredients + RecipeIngredientData(editingIngredientData!!.ingredient, unit, quantity)
+                } else {
+                    recipeIngredients = recipeIngredients.map {
+                        if (it === editingIngredientData) {
+                            RecipeIngredientData(it.ingredient, unit, quantity)
+                        } else it
+                    }
+                }
+                editingIngredientData = null
+                isAddingNewIngredient = false
             }
         )
     }
@@ -262,7 +295,12 @@ fun RecipeEditorPage(backStack: NavBackStack<Route>, recipeId: String? = null) {
 
             LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(recipeIngredients) { riData ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            editingIngredientData = riData
+                            isAddingNewIngredient = false
+                        }
+                    ) {
                         Row(modifier = Modifier.padding(8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(riData.ingredient.displayName, style = MaterialTheme.typography.bodyLarge)
@@ -318,8 +356,95 @@ fun RecipeEditorPage(backStack: NavBackStack<Route>, recipeId: String? = null) {
 data class RecipeIngredientData(
     val ingredient: Ingredient,
     val unit: ServingUnit,
-    var quantity: Double
+    val quantity: Double
 )
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun IngredientQuantityDialog(
+    ingredient: Ingredient,
+    initialQuantity: Double,
+    initialUnit: ServingUnit,
+    onDismiss: () -> Unit,
+    onConfirm: (Double, ServingUnit) -> Unit
+) {
+    var quantityStr by remember { mutableStateOf(initialQuantity.toString()) }
+    var selectedUnit by remember { mutableStateOf(initialUnit) }
+    var unitExpanded by remember { mutableStateOf(false) }
+    var availableUnits by remember { mutableStateOf(listOf<ServingUnit>()) }
+
+    LaunchedEffect(ingredient.id) {
+        val units = HealthAPI.db.healthDao().getUnitsForIngredient(ingredient.id)
+        // Ensure the default unit or current unit is in the list
+        val unitsWithCurrent = if (units.none { it.name == initialUnit.name }) {
+            units + initialUnit
+        } else units
+        
+        // Add "g" if not present at all
+        val finalUnits = if (unitsWithCurrent.none { it.name == "g" }) {
+            unitsWithCurrent + ServingUnit(id = UUID.randomUUID().toString(), ingredientId = ingredient.id, name = "g", grams = 1.0)
+        } else unitsWithCurrent
+        
+        availableUnits = finalUnits
+        selectedUnit = finalUnits.find { it.name == initialUnit.name } ?: initialUnit
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Quantity for ${ingredient.displayName}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedTextField(
+                    value = quantityStr,
+                    onValueChange = { quantityStr = it },
+                    label = { Text("Quantity") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                ExposedDropdownMenuBox(
+                    expanded = unitExpanded,
+                    onExpandedChange = { unitExpanded = !unitExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = selectedUnit.name,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Unit") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = unitExpanded,
+                        onDismissRequest = { unitExpanded = false }
+                    ) {
+                        availableUnits.forEach { unit ->
+                            DropdownMenuItem(
+                                text = { Text(unit.name) },
+                                onClick = {
+                                    selectedUnit = unit
+                                    unitExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val q = quantityStr.toDoubleOrNull() ?: 0.0
+                    onConfirm(q, selectedUnit)
+                },
+                enabled = quantityStr.toDoubleOrNull() != null
+            ) { Text("Confirm") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
 
 @Composable
 fun IngredientSearchDialog(
