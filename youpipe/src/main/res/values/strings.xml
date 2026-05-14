@@ -13,6 +13,7 @@
     <string name="action_go_back">Go Back</string>
     <string name="label_comments">Comments</string>
     <string name="label_related_videos">Related Videos</string>
+    <string name="label_description">Description</string>
     <string name="title_subscriptions">Subscriptions</string>
     <string name="label_groups">Groups:</string>
     <string name="label_all_subscriptions">All Subscriptions</string>

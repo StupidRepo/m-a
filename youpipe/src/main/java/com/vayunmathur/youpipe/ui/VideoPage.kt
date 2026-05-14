@@ -2,6 +2,7 @@ package com.vayunmathur.youpipe.ui
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -91,7 +93,7 @@ import kotlin.time.toKotlinInstant
 data class VideoChapter(val time: Int, val title: String, val previewURL: String?)
 data class AudioStream(val url: String, val bitrate: Int, val language: String, val codec: String, val size: Long)
 data class VideoStream(val url: String, val width: Int, val height: Int, val bitrate: Int, val fps: Int, val quality: String, val codec: String, val size: Long)
-data class VideoData(val title: String, val views: Long, val duration: Long, val uploadDate: Instant, val thumbnailURL: String, val author: String, val authorURL: String, val authorThumbnail: String)
+data class VideoData(val title: String, val views: Long, val duration: Long, val uploadDate: Instant, val thumbnailURL: String, val author: String, val authorURL: String, val authorThumbnail: String, val description: String)
 data class Comment(val text: String, val author: String, val likes: Int, val dislikes: Int)
 
 @Composable
@@ -207,7 +209,8 @@ fun VideoPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, vide
                     streamExtractor.thumbnails.first().url,
                     HtmlCompat.fromHtml(streamExtractor.uploaderName, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
                     channelURLtoID(streamExtractor.uploaderUrl),
-                    streamExtractor.uploaderAvatars.first().url
+                    streamExtractor.uploaderAvatars.first().url,
+                    streamExtractor.description.content.fromHTML()
                 )
                 val relatedVideosEx = streamExtractor.relatedItems ?: return@withContext
                 relatedVideos = relatedVideosEx.items.filterIsInstance<StreamInfoItem>().map {
@@ -244,6 +247,7 @@ fun VideoPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, vide
                     video.videoItem.uploadDate,
                     video.videoItem.thumbnailURL,
                     video.videoItem.author,
+                    "",
                     "",
                     ""
                 )
@@ -315,41 +319,51 @@ fun VideoPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, vide
                     isFullscreen = it
                 }
                 VideoDetails(backStack, viewModel, videoData, videoID, videoStreams, audioStreams)
-            }
-            if(!isFullscreen) {
-                val pagerState = rememberPagerState(pageCount = { 2 })
-                val coroutineScope = rememberCoroutineScope()
 
-                Column {
-                    // 2. The TabRow synchronized with the pager
-                    SecondaryTabRow(selectedTabIndex = pagerState.currentPage) {
-                        Tab(
-                            selected = pagerState.currentPage == 0,
-                            onClick = {
-                                coroutineScope.launch { pagerState.animateScrollToPage(0) }
-                            }
-                        ) {
-                            Text(stringResource(R.string.label_comments), modifier = Modifier.padding(16.dp))
-                        }
-                        Tab(
-                            selected = pagerState.currentPage == 1,
-                            onClick = {
-                                coroutineScope.launch { pagerState.animateScrollToPage(1) }
-                            }
-                        ) {
-                            Text(stringResource(R.string.label_related_videos), modifier = Modifier.padding(16.dp))
-                        }
-                    }
+                if(!isFullscreen) {
+                    val pagerState = rememberPagerState(pageCount = { 3 })
+                    val coroutineScope = rememberCoroutineScope()
 
-                    // 3. The Pager that enables swiping
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize(),
-                        verticalAlignment = Alignment.Top // Ensures content starts at top
-                    ) { page ->
-                        when (page) {
-                            0 -> CommentsSection(comments)
-                            1 -> RelatedVideosSection(backStack, viewModel, relatedVideos)
+                    Column {
+                        // 2. The TabRow synchronized with the pager
+                        SecondaryTabRow(selectedTabIndex = pagerState.currentPage) {
+                            Tab(
+                                selected = pagerState.currentPage == 0,
+                                onClick = {
+                                    coroutineScope.launch { pagerState.animateScrollToPage(0) }
+                                }
+                            ) {
+                                Text(stringResource(R.string.label_comments), modifier = Modifier.padding(16.dp))
+                            }
+                            Tab(
+                                selected = pagerState.currentPage == 1,
+                                onClick = {
+                                    coroutineScope.launch { pagerState.animateScrollToPage(1) }
+                                }
+                            ) {
+                                Text(stringResource(R.string.label_related_videos), modifier = Modifier.padding(16.dp))
+                            }
+                            Tab(
+                                selected = pagerState.currentPage == 2,
+                                onClick = {
+                                    coroutineScope.launch { pagerState.animateScrollToPage(2) }
+                                }
+                            ) {
+                                Text(stringResource(R.string.label_description), modifier = Modifier.padding(16.dp))
+                            }
+                        }
+
+                        // 3. The Pager that enables swiping
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.Top // Ensures content starts at top
+                        ) { page ->
+                            when (page) {
+                                0 -> CommentsSection(comments)
+                                1 -> RelatedVideosSection(backStack, viewModel, relatedVideos)
+                                2 -> DescriptionSection(videoData.description)
+                            }
                         }
                     }
                 }
@@ -504,56 +518,67 @@ fun VideoDetails(
         }
     }
 
-    ListItem({
-        Text(videoData.title, style = MaterialTheme.typography.titleMedium)
-    }, Modifier, {}, {
-        Text(stringResource(R.string.video_info_format, videoData.author, countString(context, videoData.views), uploadTimeAgo(context, videoData.uploadDate)))
-    }, {
-        AsyncImage(
-            model = videoData.authorThumbnail,
-            contentDescription = null,
-            Modifier.size(32.dp).clip(CircleShape).clickable{
-                backStack.add(Route.ChannelPage(videoData.authorURL))
+    Column {
+        ListItem({
+            Text(videoData.title, style = MaterialTheme.typography.titleMedium)
+        }, Modifier, {}, {
+            Text(stringResource(R.string.video_info_format, videoData.author, countString(context, videoData.views), uploadTimeAgo(context, videoData.uploadDate)))
+        }, {
+            AsyncImage(
+                model = videoData.authorThumbnail,
+                contentDescription = null,
+                Modifier.size(32.dp).clip(CircleShape).clickable{
+                    backStack.add(Route.ChannelPage(videoData.authorURL))
+                }
+            )
+        }, {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (downloadProgress != null) {
+                    CircularProgressIndicator(
+                        progress = { downloadProgress.toFloat() },
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                    IconButton(onClick = {
+                        DownloadManager.cancelDownload(context, videoID)
+                    }) {
+                        Icon(
+                            painterResource(com.vayunmathur.library.R.drawable.close_24px),
+                            contentDescription = "Cancel Download"
+                        )
+                    }
+                } else if (downloadedVideo == null) {
+                    IconButton(onClick = {
+                        isDownloadDialogVisible = true
+                    }) {
+                        Icon(
+                            painterResource(R.drawable.download_24px),
+                            contentDescription = "Download"
+                        )
+                    }
+                } else {
+                    IconButton(onClick = {
+                        viewModel.delete(downloadedVideo!!)
+                    }) {
+                        Icon(
+                            painterResource(com.vayunmathur.library.R.drawable.delete_24px),
+                            contentDescription = "Delete Download",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             }
-        )
-    }, {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (downloadProgress != null) {
-                CircularProgressIndicator(
-                    progress = { downloadProgress.toFloat() },
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp
-                )
-                IconButton(onClick = {
-                    DownloadManager.cancelDownload(context, videoID)
-                }) {
-                    Icon(
-                        painterResource(com.vayunmathur.library.R.drawable.close_24px),
-                        contentDescription = "Cancel Download"
-                    )
-                }
-            } else if (downloadedVideo == null) {
-                IconButton(onClick = {
-                    isDownloadDialogVisible = true
-                }) {
-                    Icon(
-                        painterResource(com.vayunmathur.library.R.drawable.baseline_upload_24),
-                        contentDescription = "Download"
-                    )
-                }
-            } else {
-                IconButton(onClick = {
-                    viewModel.delete(downloadedVideo!!)
-                }) {
-                    Icon(
-                        painterResource(com.vayunmathur.library.R.drawable.delete_24px),
-                        contentDescription = "Delete Download",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
+        })
+    }
+}
+
+@Composable
+fun DescriptionSection(description: String) {
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        item {
+            Text(text = description, style = MaterialTheme.typography.bodyMedium)
         }
-    })
+    }
 }
 
 @Composable

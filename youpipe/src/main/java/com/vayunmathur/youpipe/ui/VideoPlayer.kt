@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +59,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import android.view.WindowManager
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -74,6 +79,7 @@ import com.vayunmathur.youpipe.findActivity
 import com.vayunmathur.youpipe.rememberIsInPipMode
 import com.vayunmathur.youpipe.util.PlaybackService
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -97,8 +103,10 @@ fun VideoPlayer(
     var currentAudioStream by remember { mutableStateOf(audioStreamOptions.first()) }
     var isControlsVisible by remember { mutableStateOf(true) }
     var currentPosition by remember { mutableLongStateOf(0L) }
+    var bufferedPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var isDragging by remember { mutableStateOf(false) }
+    var isBuffering by remember { mutableStateOf(false) }
 
     var isVideoMenuExpanded by remember { mutableStateOf(false) }
     var isLanguageMenuExpanded by remember { mutableStateOf(false) }
@@ -124,12 +132,21 @@ fun VideoPlayer(
 
     var aspectRatio by remember { mutableFloatStateOf(16f / 9f) }
 
+    val activity = context.findActivity()
+    DisposableEffect(Unit) {
+        activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     DisposableEffect(controller) {
         val player = controller ?: return@DisposableEffect onDispose {}
         val listener = object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) {
                 if (events.contains(Player.EVENT_TIMELINE_CHANGED) || events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED)) {
                     duration = player.duration.coerceAtLeast(0L)
+                    isBuffering = player.playbackState == Player.STATE_BUFFERING
                 }
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -154,9 +171,12 @@ fun VideoPlayer(
     LaunchedEffect(controller, isDragging) {
         val player = controller ?: return@LaunchedEffect
         while (true) {
-            if (!isDragging && player.isPlaying) {
+            if (!isDragging) {
                 currentPosition = player.currentPosition.coerceAtLeast(0L)
-                viewModel.upsertAsync(HistoryVideo.fromVideoData(videoInfo.copy(duration = duration), currentPosition))
+                bufferedPosition = player.bufferedPosition.coerceAtLeast(0L)
+                if (player.isPlaying) {
+                    viewModel.upsertAsync(HistoryVideo.fromVideoData(videoInfo.copy(duration = duration), currentPosition))
+                }
             }
             delay(300)
         }
@@ -191,16 +211,38 @@ fun VideoPlayer(
     }
 
     val isPipMode = rememberIsInPipMode()
+    val scope = rememberCoroutineScope()
 
     val modifier = if(isFullscreen) Modifier.fillMaxHeight() else Modifier.aspectRatio(16f / 9f)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { isControlsVisible = !isControlsVisible }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { isControlsVisible = !isControlsVisible },
+                    onDoubleTap = { offset ->
+                        val isRightSide = offset.x > size.width / 2
+                        if (isRightSide) {
+                            controller?.seekTo(currentPosition + 10000L)
+                        } else {
+                            controller?.seekTo(currentPosition - 10000L)
+                        }
+                    },
+                    onPress = {
+                        val job = scope.launch {
+                            delay(viewConfiguration.longPressTimeoutMillis)
+                            controller?.setPlaybackSpeed(2f)
+                        }
+                        try {
+                            awaitRelease()
+                        } finally {
+                            job.cancel()
+                            controller?.setPlaybackSpeed(1f)
+                        }
+                    }
+                )
+            }
     ) {
         val playerModifier = if (aspectRatio > 16f/9f) {
             // Video is wider than container -> match width, height will follow ratio
@@ -304,6 +346,13 @@ fun VideoPlayer(
                         modifier = Modifier.size(64.dp).align(Alignment.Center),
                     )
                 }
+
+                if (isBuffering) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(48.dp).align(Alignment.Center),
+                        color = Color.White
+                    )
+                }
                 Row(Modifier.align(Alignment.BottomCenter).padding(16.dp), verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
                         Row(
@@ -321,18 +370,31 @@ fun VideoPlayer(
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
-                        Slider(
-                            value = if (duration > 0) currentPosition.toFloat() else 0f,
-                            onValueChange = { isDragging = true; currentPosition = it.toLong() },
-                            onValueChangeFinished = {
-                                controller?.seekTo(currentPosition); isDragging = false
-                            },
-                            valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            Slider(
+                                value = if (duration > 0) bufferedPosition.toFloat() else 0f,
+                                onValueChange = { },
+                                valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.Transparent,
+                                    activeTrackColor = Color.White.copy(alpha = 0.3f),
+                                    inactiveTrackColor = Color.Transparent
+                                )
                             )
-                        )
+                            Slider(
+                                value = if (duration > 0) currentPosition.toFloat() else 0f,
+                                onValueChange = { isDragging = true; currentPosition = it.toLong() },
+                                onValueChangeFinished = {
+                                    controller?.seekTo(currentPosition); isDragging = false
+                                },
+                                valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = MaterialTheme.colorScheme.primary,
+                                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                                    inactiveTrackColor = Color.White.copy(alpha = 0.2f)
+                                )
+                            )
+                        }
                     }
                     Spacer(Modifier.padding(4.dp))
                     IconButton({onFullscreenChange(!isFullscreen)}) {
