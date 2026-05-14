@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         val ds = DataStoreUtils.getInstance(this)
-        val db = buildDatabase<ClockDatabase>()
+        val db = buildDatabase<ClockDatabase>(useDeviceProtectedStorage = true)
         val viewModel = DatabaseViewModel(db, Timer::class to db.timerDao(), Alarm::class to db.alarmDao())
 
         val initialRoute = when (intent.action) {

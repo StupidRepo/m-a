@@ -47,13 +47,16 @@
         <receiver
             android:name=".util.AlarmReceiver"
             android:enabled="true"
+            android:directBootAware="true"
             android:exported="false">
         </receiver>
         <receiver
             android:name=".util.BootReceiver"
             android:enabled="true"
+            android:directBootAware="true"
             android:exported="true">
             <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
@@ -62,11 +65,13 @@
             android:name=".ui.AlarmActivity"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
+            android:directBootAware="true"
             android:lockTaskMode="if_whitelisted"
             android:launchMode="singleInstance" />
         <service
             android:name=".util.AlarmSoundService"
             android:foregroundServiceType="mediaPlayback"
+            android:directBootAware="true"
             android:exported="false" />
     </application>
 </manifest>

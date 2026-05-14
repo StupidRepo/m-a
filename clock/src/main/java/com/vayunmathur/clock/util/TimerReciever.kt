@@ -31,7 +31,7 @@ class TimerReceiver : BroadcastReceiver() {
                 postFinishedNotification(context, name, id)
 
                 // 2. Database Cleanup
-                val db = context.buildDatabase<ClockDatabase>()
+                val db = context.buildDatabase<ClockDatabase>(useDeviceProtectedStorage = true)
                 db.timerDao().delete(
                     Timer(true, name, Clock.System.now(), Duration.ZERO, Duration.ZERO, id)
                 )

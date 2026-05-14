@@ -62,7 +62,7 @@ class AlarmActivity : ComponentActivity() {
         val km = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
         km.requestDismissKeyguard(this, null)
 
-        val db = buildDatabase<ClockDatabase>()
+        val db = buildDatabase<ClockDatabase>(useDeviceProtectedStorage = true)
 
         setContent {
             val alarm by androidx.compose.runtime.produceState<com.vayunmathur.clock.data.Alarm?>(initialValue = null) {

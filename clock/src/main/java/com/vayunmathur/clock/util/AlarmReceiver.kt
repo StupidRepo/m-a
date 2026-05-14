@@ -44,7 +44,7 @@ class AlarmReceiver : BroadcastReceiver() {
             .setFullScreenIntent(pendingIntent, true)
             .setAutoCancel(true)
 
-        val db = context.buildDatabase<ClockDatabase>()
+        val db = context.buildDatabase<ClockDatabase>(useDeviceProtectedStorage = true)
         CoroutineScope(Dispatchers.IO).launch {
             val alarm = db.alarmDao().get(alarmId)
             if(alarm.days == 0) {

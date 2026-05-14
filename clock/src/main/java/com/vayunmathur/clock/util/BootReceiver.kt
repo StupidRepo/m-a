@@ -13,8 +13,8 @@ import kotlinx.coroutines.launch
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == "android.intent.action.QUICKBOOT_POWERON") {
-            val db = context.buildDatabase<ClockDatabase>()
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_LOCKED_BOOT_COMPLETED || intent.action == "android.intent.action.QUICKBOOT_POWERON") {
+            val db = context.buildDatabase<ClockDatabase>(useDeviceProtectedStorage = true)
             val scheduler = AlarmScheduler.get()
             
             CoroutineScope(Dispatchers.IO).launch {

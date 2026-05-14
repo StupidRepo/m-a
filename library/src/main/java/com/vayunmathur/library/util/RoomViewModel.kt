@@ -365,15 +365,33 @@ fun loadSqlCipher() {
 inline fun <reified T : RoomDatabase> Context.buildDatabase(
     migrations: List<Migration> = emptyList(),
     encryptionPassword: String? = null,
-    dbName: String = "passwords-db"
+    dbName: String = "passwords-db",
+    useDeviceProtectedStorage: Boolean = false
 ): T {
     loadSqlCipher()
+
+    val targetContext = if (useDeviceProtectedStorage) {
+        val deviceContext = this.createDeviceProtectedStorageContext()
+        val sharedPrefsName = "secure_prefs" // Matches DatabaseHelper.sharedPrefsName
+        
+        if (!deviceContext.getDatabasePath(dbName).exists() && this.getDatabasePath(dbName).exists()) {
+            deviceContext.moveDatabaseFrom(this, dbName)
+        }
+        if (deviceContext.getSharedPreferences(sharedPrefsName, Context.MODE_PRIVATE).all.isEmpty() && 
+            this.getSharedPreferences(sharedPrefsName, Context.MODE_PRIVATE).all.isNotEmpty()) {
+            deviceContext.moveSharedPreferencesFrom(this, sharedPrefsName)
+        }
+        deviceContext
+    } else {
+        this
+    }
+
     synchronized(databases) {
         if (databases[T::class] != null) return databases[T::class]!! as T
 
         var password = encryptionPassword
         if (password == null) {
-            val helper = DatabaseHelper(this)
+            val helper = DatabaseHelper(targetContext)
             if (!helper.isKeyGenerated()) {
                 helper.generateKey()
                 val cipher = helper.getCipherForEncryption()
@@ -384,10 +402,10 @@ inline fun <reified T : RoomDatabase> Context.buildDatabase(
             }
         }
 
-        encryptExistingDatabase(this, dbName, password)
+        encryptExistingDatabase(targetContext, dbName, password)
 
         val builder = Room.databaseBuilder(
-            this,
+            targetContext,
             T::class.java,
             dbName
         ).addMigrations(*migrations.toTypedArray())
