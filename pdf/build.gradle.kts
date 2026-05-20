@@ -3,7 +3,6 @@ plugins {
 }
 
 android {
-    compileSdkExtension = 19
     defaultConfig {
         applicationId = "com.vayunmathur.pdf"
     }
