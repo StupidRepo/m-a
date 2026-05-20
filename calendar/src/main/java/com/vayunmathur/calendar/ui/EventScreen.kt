@@ -99,17 +99,21 @@ fun EventScreen(viewModel: CalendarViewModel, instance: Instance, backStack: Nav
     }
 }
 
-fun dateRangeString(context: Context, startDate: LocalDate, endDate: LocalDate, startTime: LocalTime, endTime: LocalTime, allDay: Boolean): String {
+fun dateRangeString(context: Context, startDate: LocalDate, endDate: LocalDate, startTime: LocalTime, endTime: LocalTime, allDay: Boolean, includeDate: Boolean = true): String {
     return if(allDay) {
         if(startDate.toEpochDays() + 1 == endDate.toEpochDays()) {
-            startDate.format(dateFormat)
+            if (includeDate) startDate.format(dateFormat) else context.getString(R.string.all_day)
         } else {
             context.getString(R.string.date_range_format, startDate.format(dateFormat), endDate.format(dateFormat))
         }
     } else {
         val timeFmt = if(DateFormat.is24HourFormat(context)) timeFormat24 else timeFormat12
         if(startDate == endDate) {
-            context.getString(R.string.date_time_range_format, startDate.format(dateFormat), startTime.format(timeFmt), endTime.format(timeFmt))
+            if (includeDate) {
+                context.getString(R.string.date_time_range_format, startDate.format(dateFormat), startTime.format(timeFmt), endTime.format(timeFmt))
+            } else {
+                context.getString(R.string.date_range_format, startTime.format(timeFmt), endTime.format(timeFmt))
+            }
         } else {
             context.getString(R.string.full_date_time_range_format, startDate.format(dateFormat), startTime.format(timeFmt), endDate.format(dateFormat), endTime.format(timeFmt))
         }

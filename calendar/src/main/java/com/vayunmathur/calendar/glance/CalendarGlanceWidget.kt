@@ -126,7 +126,8 @@ fun Content(context: Context, positionedEvents: Map<LocalDate, List<Instance>>) 
                                         instance.endDateTime.date,
                                         instance.startDateTime.time,
                                         instance.endDateTime.time,
-                                        instance.allDay
+                                        instance.allDay,
+                                        includeDate = false
                                     ),
                                     style = defaultTextStyle.copy(color = GlanceTheme.colors.onPrimaryContainer)
                                 )
