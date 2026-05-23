@@ -47,7 +47,11 @@ fun videoIDtoURL(id: Long): String {
 }
 
 fun channelIDtoURL(id: String): String {
-    return "https://www.youtube.com/channel/$id"
+    return if (id.startsWith("@")) {
+        "https://www.youtube.com/$id"
+    } else {
+        "https://www.youtube.com/channel/$id"
+    }
 }
 
 suspend fun getVideoInfo(videoId: Long): VideoInfo = coroutineScope {
@@ -71,19 +75,22 @@ fun getChannelVideos(channelId: String): Sequence<VideoInfo> = sequence {
     var page = ex.initialPage
     while(true) {
         page.items.filterIsInstance<StreamInfoItem>().forEach {
+            val date = it.uploadDate ?: return@forEach
             yield(
-            VideoInfo(
-                HtmlCompat.fromHtml(it.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
-                videoURLtoID(it.url),
-                it.duration,
-                it.viewCount,
-                it.uploadDate!!.instant.toKotlinInstant(),
-                it.thumbnails.first().url,
-                HtmlCompat.fromHtml(it.uploaderName, HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
-            ))
+                VideoInfo(
+                    HtmlCompat.fromHtml(it.name, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(),
+                    videoURLtoID(it.url),
+                    it.duration,
+                    it.viewCount,
+                    date.instant.toKotlinInstant(),
+                    it.thumbnails.firstOrNull()?.url ?: "",
+                    HtmlCompat.fromHtml(it.uploaderName, HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
+                )
+            )
         }
         if(page.hasNextPage()) {
-            page = ex.getPage(page.nextPage!!)
+            val next = page.nextPage ?: break
+            page = ex.getPage(next)
         } else {
             break
         }

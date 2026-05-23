@@ -35,7 +35,12 @@ class SubscriptionFetchTask(context: Context, params: WorkerParameters) :
 
             subscriptions.forEachIndexed { index, sub ->
                 try {
-                    val channelVideos = getChannelVideos(sub.channelID).toList()
+                    val actualChannelID = if (sub.channelID.startsWith("@")) {
+                        getChannelInfo(sub.channelID).channelID
+                    } else {
+                        sub.channelID
+                    }
+                    val channelVideos = getChannelVideos(actualChannelID).toList()
                     val videosFromSub =
                             channelVideos.map {
                                 SubscriptionVideo(

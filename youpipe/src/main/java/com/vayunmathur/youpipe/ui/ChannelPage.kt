@@ -70,23 +70,26 @@ fun ChannelPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, ch
 
     val subscriptions by viewModel.data<Subscription>().collectAsState()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(channelID) {
         withContext(Dispatchers.IO) {
-            channelInfo = getChannelInfo(channelID)
-            getChannelVideos(channelID).forEach {
-                videos += it
+            val info = getChannelInfo(channelID)
+            channelInfo = info
+            getChannelVideos(info.channelID).forEach { video ->
+                withContext(Dispatchers.Main) {
+                    videos = videos + video
+                }
             }
         }
     }
 
     Scaffold { paddingValues ->
         Column(Modifier.padding(paddingValues)) {
-            channelInfo?.let { channelInfo ->
-                ChannelHeader(channelInfo)
-                val existingSubscription = subscriptions.firstOrNull { it.channelID == channelID }
+            channelInfo?.let { info ->
+                ChannelHeader(info)
+                val existingSubscription = subscriptions.firstOrNull { it.channelID == info.channelID }
                 if(existingSubscription == null) {
                     Button({
-                        viewModel.upsertAsync(Subscription(name = channelInfo.name, channelID = channelID, avatarURL = channelInfo.avatar))
+                        viewModel.upsertAsync(Subscription(name = info.name, channelID = info.channelID, avatarURL = info.avatar))
                     }, Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
                         Text(stringResource(R.string.action_subscribe))
                     }
