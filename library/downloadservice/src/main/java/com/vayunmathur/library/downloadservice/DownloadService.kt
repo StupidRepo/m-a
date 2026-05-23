@@ -24,7 +24,7 @@ class DownloadService : Service() {
         private const val NOTIF_ID = 1001
         private const val CHANNEL_ID = "high_speed_download_channel"
         private const val MAX_RETRIES = 5
-        private const val BUFFER_SIZE = 262144
+        private const val BUFFER_SIZE = 65536
     }
 
     private var wifiLock: WifiManager.WifiLock? = null

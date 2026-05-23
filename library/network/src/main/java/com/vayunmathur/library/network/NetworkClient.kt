@@ -7,6 +7,7 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
+import io.ktor.client.request.prepareRequest
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -105,22 +106,23 @@ object NetworkClient {
         headers: Map<String, *> = emptyMap<String, Any>(),
         block: suspend (stream: NetworkDataStream?, response: SimpleResponse) -> Unit
     ): SimpleResponse {
-        val response = client.request(url) {
+        return client.prepareRequest(url) {
             this.method = HttpMethod.parse(method)
             applyHeaders(headers)
-        }
-        val simpleResponse = response.toSimpleResponse()
-        if (simpleResponse.isSuccess || simpleResponse.status == 206) {
-            val channel = response.bodyAsChannel()
-            val stream = object : NetworkDataStream {
-                override suspend fun read(buffer: ByteArray): Int = channel.readAvailable(buffer)
-                override val isClosedForRead: Boolean get() = channel.isClosedForRead
+        }.execute { response ->
+            val simpleResponse = response.toSimpleResponse()
+            if (simpleResponse.isSuccess || simpleResponse.status == 206) {
+                val channel = response.bodyAsChannel()
+                val stream = object : NetworkDataStream {
+                    override suspend fun read(buffer: ByteArray): Int = channel.readAvailable(buffer)
+                    override val isClosedForRead: Boolean get() = channel.isClosedForRead
+                }
+                block(stream, simpleResponse)
+            } else {
+                block(null, simpleResponse)
             }
-            block(stream, simpleResponse)
-        } else {
-            block(null, simpleResponse)
+            simpleResponse
         }
-        return simpleResponse
     }
 
     suspend fun getContentLength(url: String, headers: Map<String, *> = emptyMap<String, Any>()): Long? {
