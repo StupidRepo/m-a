@@ -1,14 +1,26 @@
 package com.vayunmathur.youpipe.util
 import androidx.core.net.toUri
 import androidx.core.text.HtmlCompat
+import com.vayunmathur.library.network.NetworkClient
 import com.vayunmathur.youpipe.ui.ChannelInfo
 import com.vayunmathur.youpipe.ui.VideoInfo
 import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.Serializable
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.nio.ByteBuffer
 import kotlin.io.encoding.Base64
 import kotlin.time.toKotlinInstant
+
+@Serializable
+data class SponsorSegment(
+    val category: String,
+    val segment: List<Float>,
+    val UUID: String
+) {
+    val start: Long get() = (segment[0] * 1000).toLong()
+    val end: Long get() = (segment[1] * 1000).toLong()
+}
 
 fun videoURLtoID(url: String): Long {
     return ByteBuffer.wrap(Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).decode(url.toUri().getQueryParameter("v")!!)).long
@@ -90,4 +102,13 @@ suspend fun getChannelInfoFromURL(url: String): ChannelInfo = coroutineScope {
         0,
         ex.avatars.firstOrNull()?.url ?: "",
     )
+}
+
+suspend fun getSponsorSegments(videoId: Long): List<SponsorSegment> {
+    val idString = decodeVideoID(videoId)
+    return try {
+        NetworkClient.getJson("https://sponsor.ajay.app/api/skipSegments?videoID=$idString")
+    } catch (e: Exception) {
+        emptyList()
+    }
 }

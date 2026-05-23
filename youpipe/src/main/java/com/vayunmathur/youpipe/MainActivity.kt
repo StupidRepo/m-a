@@ -39,6 +39,7 @@ import com.vayunmathur.youpipe.ui.DownloadedVideosPage
 import com.vayunmathur.youpipe.ui.HistoryPage
 import com.vayunmathur.youpipe.util.PlaybackService
 import com.vayunmathur.youpipe.ui.SearchPage
+import com.vayunmathur.youpipe.ui.SettingsPage
 import com.vayunmathur.youpipe.ui.SubscriptionVideosPage
 import com.vayunmathur.youpipe.ui.SubscriptionsPage
 import com.vayunmathur.youpipe.ui.VideoPage
@@ -153,6 +154,9 @@ sealed interface Route: NavKey {
 
     @Serializable
     data object Downloads: Route
+
+    @Serializable
+    data object Settings: Route
 }
 
 @Composable
@@ -183,6 +187,9 @@ fun Navigation(initialRoute: Route, viewModel: DatabaseViewModel) {
         entry<Route.Downloads> {
             DownloadedVideosPage(backStack, viewModel)
         }
+        entry<Route.Settings> {
+            SettingsPage(backStack, viewModel)
+        }
     }
 }
 
@@ -190,5 +197,6 @@ val MAIN_BOTTOM_BAR_ITEMS = listOf(
     BottomBarItem("Search", Route.SearchPage, R.drawable.outline_search_24),
     BottomBarItem("Subscriptions", Route.SubscriptionsPage, R.drawable.outline_subscriptions_24),
     BottomBarItem("History", Route.History, R.drawable.baseline_history_24),
-    BottomBarItem("Downloads", Route.Downloads, R.drawable.outline_list_24)
+    BottomBarItem("Downloads", Route.Downloads, R.drawable.outline_list_24),
+    BottomBarItem("Settings", Route.Settings, com.vayunmathur.library.R.drawable.settings_24px)
 )

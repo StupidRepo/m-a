@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -72,14 +73,21 @@ import androidx.media3.ui.compose.material3.buttons.PlayPauseButton
 import coil.compose.AsyncImage
 import com.google.common.util.concurrent.MoreExecutors
 import com.vayunmathur.library.ui.IconClose
+import com.vayunmathur.library.util.DataStoreUtils
 import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.youpipe.R
 import com.vayunmathur.youpipe.data.HistoryVideo
 import com.vayunmathur.youpipe.findActivity
 import com.vayunmathur.youpipe.rememberIsInPipMode
 import com.vayunmathur.youpipe.util.PlaybackService
+import com.vayunmathur.youpipe.util.SponsorSegment
+import com.vayunmathur.youpipe.util.getSponsorSegments
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -93,6 +101,13 @@ fun VideoPlayer(
     onFullscreenChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
+    val ds = remember { DataStoreUtils.getInstance(context) }
+    val sponsorBlockEnabled by ds.booleanFlow("sponsorblock_enabled").collectAsState(initial = false)
+    var sponsorSegments by remember { mutableStateOf<List<SponsorSegment>>(emptyList()) }
+
+    LaunchedEffect(videoInfo.videoID) {
+        sponsorSegments = getSponsorSegments(videoInfo.videoID)
+    }
 
     var languages by remember { mutableStateOf(audioStreams.map { it.language }.distinct().sorted()) }
     var language by remember { mutableStateOf(if("en" in languages) "en" else languages.first()) }
@@ -174,6 +189,15 @@ fun VideoPlayer(
             if (!isDragging) {
                 currentPosition = player.currentPosition.coerceAtLeast(0L)
                 bufferedPosition = player.bufferedPosition.coerceAtLeast(0L)
+
+                if (sponsorBlockEnabled) {
+                    val currentSegment = sponsorSegments.find { currentPosition in it.start until it.end }
+                    if (currentSegment != null) {
+                        player.seekTo(currentSegment.end)
+                        currentPosition = currentSegment.end
+                    }
+                }
+
                 if (player.isPlaying) {
                     viewModel.upsertAsync(HistoryVideo.fromVideoData(videoInfo.copy(duration = duration), currentPosition))
                 }
@@ -381,6 +405,19 @@ fun VideoPlayer(
                                     inactiveTrackColor = Color.Transparent
                                 )
                             )
+                            if (duration > 0) {
+                                Canvas(modifier = Modifier.fillMaxWidth().height(4.dp).padding(horizontal = 20.dp)) {
+                                    sponsorSegments.forEach { segment ->
+                                        val startX = (segment.start.toFloat() / duration) * size.width
+                                        val endX = (segment.end.toFloat() / duration) * size.width
+                                        drawRect(
+                                            color = Color.Yellow.copy(alpha = 0.7f),
+                                            topLeft = Offset(startX, 0f),
+                                            size = Size(endX - startX, size.height)
+                                        )
+                                    }
+                                }
+                            }
                             Slider(
                                 value = if (duration > 0) currentPosition.toFloat() else 0f,
                                 onValueChange = { isDragging = true; currentPosition = it.toLong() },
