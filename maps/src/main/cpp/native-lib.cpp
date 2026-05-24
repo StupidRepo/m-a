@@ -437,67 +437,97 @@ void perform_search_loop(JNIEnv* env, jobject thiz, int mode, RoutingContext& ct
 }
 
 jobjectArray reconstruct_path(JNIEnv* env, int mode, const RoutingContext& ctx) {
-    std::vector<uint32_t> path;
+    std::vector<uint32_t> path_nodes;
     uint32_t curr = ctx.target_node;
     uint32_t safety = 0;
     while (curr != 0xFFFFFFFF && safety < 1000000) {
-        path.push_back(curr); curr = g_scratchpad[curr].p_fwd; safety++;
+        path_nodes.push_back(curr); curr = g_scratchpad[curr].p_fwd; safety++;
     }
-    std::reverse(path.begin(), path.end());
-    if (path.empty()) return nullptr;
+    std::reverse(path_nodes.begin(), path_nodes.end());
+    if (path_nodes.empty()) return nullptr;
+
     struct StepData {
         uint32_t name_off; uint64_t dist_mm = 0; uint64_t time_10ms = 0;
         std::vector<double> coords; int maneuver = 0;
         double speed_ratio = 1.0;
     };
     std::vector<StepData> steps; double last_bearing = 0;
-    int total_edges = 0;
-    int traffic_edges = 0;
-    for (size_t i = 0; i < path.size() - 1; ++i) {
-        uint32_t u = path[i], v = path[i+1];
-        int z_u = get_zone_for_id(u); if (z_u < 0) continue;
-        const auto& node_u = g_node_zones[z_u][u - g_zone_offsets[z_u]];
-        const auto& node_v = get_node(v);
-        uint32_t current_name_off = 0xFFFFFFFF; uint8_t edge_type = 7, edge_limit = 0; uint32_t edge_dist_mm = 0;
-        uint32_t s = node_u.edge_ptr;
-        uint32_t node_idx = u - g_zone_offsets[z_u];
-        uint32_t node_count = g_zone_offsets[z_u + 1] - g_zone_offsets[z_u];
-        uint32_t e_ptr = (node_idx + 1 < node_count) ? g_node_zones[z_u][node_idx + 1].edge_ptr : (uint32_t)g_edge_count_in_zone[z_u];
-        uint32_t resolved_edge_idx = 0xFFFFFFFF;
-        for (uint32_t k = s; k < e_ptr; ++k) {
-            if (g_edge_zones[z_u][k].target == v) {
-                edge_type = g_edge_zones[z_u][k].type; edge_limit = g_edge_zones[z_u][k].speed_limit;
-                current_name_off = g_edge_zones[z_u][k].name_offset; edge_dist_mm = g_edge_zones[z_u][k].dist_mm;
-                resolved_edge_idx = k; break;
-            }
-        }
-        total_edges++;
-        uint8_t traffic_speed = 0;
-        if (resolved_edge_idx != 0xFFFFFFFF) traffic_speed = g_traffic_zones[z_u].get_speed(resolved_edge_idx);
-        if (traffic_speed > 0) traffic_edges++;
+
+    auto add_segment = [&](double lat1, double lon1, double lat2, double lon2, uint32_t name_off, uint8_t type, uint8_t limit, uint32_t dist_mm, int zone_id, uint32_t local_edge_idx) {
         double ratio = 1.0;
-        if (traffic_speed > 0 && edge_limit > 0) ratio = (double)traffic_speed / edge_limit;
-        if (edge_dist_mm == 0) edge_dist_mm = accurate_dist_mm(node_u.lat_e7, node_u.lon_e7, node_v.lat_e7, node_v.lon_e7);
-        uint32_t edge_time_10ms = get_edge_time_10ms(z_u, resolved_edge_idx, edge_dist_mm, edge_type, edge_limit, mode);
-        double current_bearing = get_bearing(node_u.lat_e7, node_u.lon_e7, node_v.lat_e7, node_v.lon_e7);
+        uint8_t traffic_speed = 0;
+        if (zone_id >= 0 && local_edge_idx != 0xFFFFFFFF) {
+            traffic_speed = g_traffic_zones[zone_id].get_speed(local_edge_idx);
+            if (traffic_speed > 0 && limit > 0) ratio = (double)traffic_speed / limit;
+        }
+
+        uint32_t time_10ms = get_edge_time_10ms(zone_id, local_edge_idx, dist_mm, type, limit, mode);
+        double bearing = get_bearing((int32_t)(lat1 * 1e7), (int32_t)(lon1 * 1e7), (int32_t)(lat2 * 1e7), (int32_t)(lon2 * 1e7));
+
         auto get_ratio_cat = [](double r) {
             if (r < 0.5) return 0;
             if (r < 0.9) return 1;
             return 2;
         };
-        if (steps.empty() || current_name_off != steps.back().name_off || get_ratio_cat(ratio) != get_ratio_cat(steps.back().speed_ratio)) {
-            int maneuver = steps.empty() ? 0 : get_maneuver(last_bearing, current_bearing);
-            steps.push_back({current_name_off, 0, 0, {}, maneuver, ratio});
-            steps.back().coords.push_back(node_u.lon_e7 / 1e7); steps.back().coords.push_back(node_u.lat_e7 / 1e7);
+
+        if (steps.empty() || name_off != steps.back().name_off || get_ratio_cat(ratio) != get_ratio_cat(steps.back().speed_ratio)) {
+            int maneuver = steps.empty() ? 0 : get_maneuver(last_bearing, bearing);
+            steps.push_back({name_off, 0, 0, {lon1, lat1}, maneuver, ratio});
         }
-        steps.back().dist_mm += edge_dist_mm; steps.back().time_10ms += edge_time_10ms;
-        steps.back().coords.push_back(node_v.lon_e7 / 1e7); steps.back().coords.push_back(node_v.lat_e7 / 1e7);
-        last_bearing = current_bearing;
+        steps.back().dist_mm += dist_mm;
+        steps.back().time_10ms += time_10ms;
+        steps.back().coords.push_back(lon2);
+        steps.back().coords.push_back(lat2);
+        last_bearing = bearing;
+    };
+
+    // 1. Start stub: proj_s -> path_nodes[0]
+    {
+        uint32_t n0 = path_nodes[0];
+        const auto& node0 = get_node(n0);
+        uint32_t dist = (n0 == ctx.start.nodeA) ? ctx.start.distA_mm : ctx.start.distB_mm;
+        add_segment(ctx.start.proj_lat * 1e-7, ctx.start.proj_lon * 1e-7, node0.lat_e7 * 1e-7, node0.lon_e7 * 1e-7,
+                    ctx.start.name_offset, ctx.start.type, ctx.start.speed_limit, dist, -1, 0xFFFFFFFF);
     }
-    if (total_edges > 0) {
-        double percent = (double)traffic_edges / total_edges * 100.0;
-        LOGD("Path traffic stats: %d/%d edges have traffic data (%.2f%%)", traffic_edges, total_edges, percent);
+
+    // 2. Main path segments
+    for (size_t i = 0; i < path_nodes.size() - 1; ++i) {
+        uint32_t u = path_nodes[i], v = path_nodes[i+1];
+        int z_u = get_zone_for_id(u);
+        if (z_u < 0) continue;
+        const auto& node_u = g_node_zones[z_u][u - g_zone_offsets[z_u]];
+        const auto& node_v = get_node(v);
+
+        uint32_t s = node_u.edge_ptr;
+        uint32_t node_idx = u - g_zone_offsets[z_u];
+        uint32_t node_count = g_zone_offsets[z_u + 1] - g_zone_offsets[z_u];
+        uint32_t e_ptr = (node_idx + 1 < node_count) ? g_node_zones[z_u][node_idx + 1].edge_ptr : (uint32_t)g_edge_count_in_zone[z_u];
+
+        uint32_t best_e_idx = 0xFFFFFFFF;
+        for (uint32_t k = s; k < e_ptr; ++k) {
+            if (g_edge_zones[z_u][k].target == v) {
+                best_e_idx = k; break;
+            }
+        }
+        if (best_e_idx == 0xFFFFFFFF) continue;
+
+        const Edge& e = g_edge_zones[z_u][best_e_idx];
+        uint32_t d = e.dist_mm;
+        if (d == 0) d = accurate_dist_mm(node_u.lat_e7, node_u.lon_e7, node_v.lat_e7, node_v.lon_e7);
+
+        add_segment(node_u.lat_e7 * 1e-7, node_u.lon_e7 * 1e-7, node_v.lat_e7 * 1e-7, node_v.lon_e7 * 1e-7,
+                    e.name_offset, e.type, e.speed_limit, d, z_u, best_e_idx);
     }
+
+    // 3. End stub: path_nodes.back() -> proj_e
+    {
+        uint32_t nk = path_nodes.back();
+        const auto& nodek = get_node(nk);
+        uint32_t dist = (nk == ctx.end.nodeA) ? ctx.end.distA_mm : ctx.end.distB_mm;
+        add_segment(nodek.lat_e7 * 1e-7, nodek.lon_e7 * 1e-7, ctx.end.proj_lat * 1e-7, ctx.end.proj_lon * 1e-7,
+                    ctx.end.name_offset, ctx.end.type, ctx.end.speed_limit, dist, -1, 0xFFFFFFFF);
+    }
+
     jclass stepClass = env->FindClass("com/vayunmathur/maps/util/OfflineRouter$RawStep");
     jmethodID stepCtor = env->GetMethodID(stepClass, "<init>", "(ILjava/lang/String;JJ[DD)V");
     jobjectArray res = env->NewObjectArray(steps.size(), stepClass, nullptr);

@@ -228,7 +228,7 @@ fun MyMapLayers(
                             LaunchedEffect(route, routeSource, styleJson) {
                                 if (route is RouteService.Route) {
                                     val features: List<Feature1> =
-                                        route.step.map { it ->
+                                        route.step.map {
                                             val color =
                                                 if (it.travelMode ==
                                                     RouteService.TravelMode
