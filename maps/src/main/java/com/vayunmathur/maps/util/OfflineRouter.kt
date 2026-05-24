@@ -6,6 +6,8 @@ import androidx.annotation.Keep
 import com.vayunmathur.library.network.NetworkClient
 import com.vayunmathur.maps.R
 import com.vayunmathur.maps.data.SpecificFeature
+import java.io.File
+import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.time.Duration.Companion.seconds
@@ -85,14 +87,14 @@ object OfflineRouter {
             eLat: Double,
             eLon: Double,
             mode: Int
-    ): Array<RawStep>
+    ): Array<RawStep>?
     private external fun updateTrafficNative(
             zoneId: Int,
             edgeIds: IntArray,
             speeds: ByteArray,
             packedSquare: Int
     )
-    private external fun getTrafficSegmentsNative(): DoubleArray
+    external fun getTrafficSegmentsNative(): DoubleArray
     private external fun notifyTrafficFetchFinishedNative(packedSquare: Int)
     external fun getTrafficTileNative(z: Int, x: Int, y: Int): ByteArray?
 
@@ -100,9 +102,13 @@ object OfflineRouter {
     val trafficVersion = _trafficVersion.asStateFlow()
 
     private var cacheDirPath: String? = null
+    private var trafficUpdateJob: kotlinx.coroutines.Job? = null
 
     fun notifyTrafficUpdated() {
-        _trafficVersion.value++
+        trafficUpdateJob?.cancel()
+        trafficUpdateJob = trafficScope.launch {
+            _trafficVersion.value++
+        }
     }
 
     external fun ensureTrafficLoadedNative(lat: Double, lon: Double, forceAsync: Boolean)

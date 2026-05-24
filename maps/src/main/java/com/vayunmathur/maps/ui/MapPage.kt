@@ -1,5 +1,6 @@
 package com.vayunmathur.maps.ui
 
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Canvas
@@ -113,6 +114,7 @@ fun MapPage(backStack: NavBackStack<Route>, viewModel: SelectedFeatureViewModel,
     }
 
     LaunchedEffect(camera.position) {
+        println(camera.position.zoom)
         if (camera.position.zoom >= 11.0) {
             delay(300) // Debounce traffic loading
             val projection = camera.projection
@@ -143,7 +145,7 @@ fun MapPage(backStack: NavBackStack<Route>, viewModel: SelectedFeatureViewModel,
 
 // Move heavy processing to a background thread
     LaunchedEffect(hybridUrl) {
-        val updatedStyle = withContext(Dispatchers.Default) {
+        val updatedStyle = withContext<String>(Dispatchers.Default) {
             val rawStyle = context.assets.open("style.json").source().readLines().joinToString("\n")
             patchStyleForHybrid(
                 rawStyle,
@@ -261,27 +263,7 @@ fun MapPage(backStack: NavBackStack<Route>, viewModel: SelectedFeatureViewModel,
                             ClickResult.Pass
                         }
                     ) {
-                        MyMapLayers(selectedFeature, route?.get(selectedRouteType), json)
-                    }
-                }
-
-                // USER ICON
-                key(camera.position) {
-                    if(camera.projection != null) {
-                        selectedFeature?.let { it as? SpecificFeature.RoutableFeature }?.let {
-                            Icon(
-                                painterResource(MapsR.drawable.location_on_24px),
-                                null,
-                                Modifier.size(48.dp).graphicsLayer {
-                                    val offset =
-                                        camera.projection!!.screenLocationFromPosition(it.position)
-                                    translationX = offset.x.toPx() - 24.dp.toPx()
-                                    translationY = offset.y.toPx() - 48.dp.toPx()
-                                }, tint = Color.Black)
-                        }
-                    }
-                    Canvas(Modifier.fillMaxSize()) {
-                        drawUserIcon(userPosition, userBearing, camera)
+                        MyMapLayers(selectedFeature, route?.get(selectedRouteType), json, userPosition, userBearing)
                     }
                 }
 

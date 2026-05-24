@@ -12,7 +12,8 @@ object FoodSearchAPI {
 
     suspend fun searchIngredients(query: String): List<SearchResult> {
         return try {
-            NetworkClient.getJson("https://api.vayunmathur.com/api/food/search?q=$query")
+            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+            NetworkClient.getJson("https://api.vayunmathur.com/api/food/search?q=$encodedQuery")
         } catch (e: Exception) {
             android.util.Log.e("FoodSearchAPI", "Search Error: ${e.message}", e)
             emptyList()

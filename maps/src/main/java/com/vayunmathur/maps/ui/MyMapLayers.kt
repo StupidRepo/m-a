@@ -22,6 +22,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.dsl.convertToColor
 import org.maplibre.compose.expressions.dsl.feature
+import org.maplibre.compose.expressions.dsl.image
 import org.maplibre.compose.expressions.dsl.interpolate
 import org.maplibre.compose.expressions.dsl.linear
 import org.maplibre.compose.expressions.dsl.zoom
@@ -33,7 +34,6 @@ import org.maplibre.compose.sources.GeoJsonData
 import org.maplibre.compose.sources.GeoJsonOptions
 import org.maplibre.compose.sources.GeoJsonSource
 import org.maplibre.compose.sources.TileSetOptions
-import org.maplibre.compose.sources.VectorSource
 import org.maplibre.compose.sources.rememberVectorSource
 import org.maplibre.compose.util.MaplibreComposable
 import org.maplibre.spatialk.geojson.Feature
@@ -45,7 +45,13 @@ import org.maplibre.spatialk.geojson.Position
 
 @Composable
 @MaplibreComposable
-fun MyMapLayers(selectedFeature: SpecificFeature?, route: RouteService.RouteType?, styleJson: String?) {
+fun MyMapLayers(
+    selectedFeature: SpecificFeature?,
+    route: RouteService.RouteType?,
+    styleJson: String?,
+    userPosition: Position,
+    userBearing: Float
+) {
     val trafficVersion by OfflineRouter.trafficVersion.collectAsState()
     val context = LocalContext.current
 
@@ -56,12 +62,25 @@ fun MyMapLayers(selectedFeature: SpecificFeature?, route: RouteService.RouteType
     key(styleJson) {
         var routeSource by remember { mutableStateOf<GeoJsonSource?>(null) }
         var outlineSource by remember { mutableStateOf<GeoJsonSource?>(null) }
+        var userSource by remember { mutableStateOf<GeoJsonSource?>(null) }
+        
+        val trafficUrl = OfflineRouter.trafficTileUrl
         val trafficSource = rememberVectorSource(
-                tiles = listOf("${OfflineRouter.trafficTileUrl}?v=$trafficVersion"),
-                options = TileSetOptions(maxZoom = 14)
+            tiles = if (trafficUrl.isNotBlank()) listOf("$trafficUrl?v=$trafficVersion") else emptyList(),
+            options = TileSetOptions(maxZoom = 14)
         )
 
         LaunchedEffect(Unit) {
+            userSource = GeoJsonSource(
+                "user-location-geojson",
+                GeoJsonData.Features(
+                    Feature(
+                        org.maplibre.spatialk.geojson.Point(userPosition),
+                        JsonObject(mapOf("bearing" to JsonPrimitive(userBearing)))
+                    )
+                ),
+                GeoJsonOptions()
+            )
             outlineSource = GeoJsonSource(
                 "selected-country-geojson",
                 GeoJsonData.Features(
@@ -100,193 +119,215 @@ fun MyMapLayers(selectedFeature: SpecificFeature?, route: RouteService.RouteType
             "traffic-layer",
             trafficSource,
             sourceLayer = "traffic",
-                color = feature["color"].cast<StringValue>().convertToColor(),
-                width =
-                        interpolate(
-                                linear(),
-                                zoom(),
-                                7 to const(0.5.dp),
-                                11 to const(1.0.dp),
-                                12 to const(1.5.dp),
-                                14 to const(3.dp),
-                                18 to const(6.dp)
-                        ),
-                cap = const(LineCap.Butt)
+            color = feature["color"].cast<StringValue>().convertToColor(),
+            width = interpolate(
+                linear(),
+                zoom(),
+                11 to const(1.0.dp),
+                12 to const(1.5.dp),
+                14 to const(3.dp),
+                18 to const(6.dp)
+            ),
+            cap = const(LineCap.Butt)
         )
 
-    outlineSource?.let { outlineSource ->
-        routeSource?.let { routeSource ->
-            when (selectedFeature) {
-                is SpecificFeature.Admin0Label -> {
-                    LaunchedEffect(selectedFeature, outlineSource, styleJson) {
-                        outlineSource.setData(
-                                GeoJsonData.Features(
-                                        FeatureCollection(
-                                                listOf(
-                                                        createInvertedMask(
-                                                                CountryMap.getAdmin0(
-                                                                        context,
-                                                                        selectedFeature.iso
-                                                                )!!
-                                                        )
-                                                )
-                                        )
-                                )
+        userSource?.let { src ->
+            LaunchedEffect(userPosition, userBearing) {
+                src.setData(
+                    GeoJsonData.Features(
+                        Feature(
+                            org.maplibre.spatialk.geojson.Point(userPosition),
+                            JsonObject(mapOf("bearing" to JsonPrimitive(userBearing)))
                         )
-                    }
-                    FillLayer(
-                            "global-mask",
-                            outlineSource,
-                            // filter = const(true),
-                            color = const(Color.Black.copy(alpha = 0.4f))
                     )
-                    LineLayer(
-                            "layer2",
-                            outlineSource,
-                            // filter = const(true),
-                            color = const(Color.Red)
-                    )
-                }
-                is SpecificFeature.Admin1Label -> {
-                    LaunchedEffect(selectedFeature, outlineSource, styleJson) {
-                        outlineSource.setData(
-                                GeoJsonData.Features(
-                                        FeatureCollection(
-                                                listOf(
-                                                        createInvertedMask(
-                                                                CountryMap.getAdmin1(
-                                                                        context,
-                                                                        selectedFeature.iso
-                                                                )!!
-                                                        )
-                                                )
-                                        )
-                                )
-                        )
-                    }
-                    FillLayer(
-                            "global-mask",
-                            outlineSource,
-                            // filter = const(true),
-                            color = const(Color.Black.copy(alpha = 0.4f))
-                    )
-                    LineLayer(
-                            "layer2",
-                            outlineSource,
-                            // filter = const(true),
-                            color = const(Color.Red)
-                    )
-                }
-                is SpecificFeature.Route -> {
-                    if (route != null) {
-                        LaunchedEffect(route, routeSource, styleJson) {
-                            if (route is RouteService.Route) {
-                                val features: List<Feature1> =
-                                        listOf<Feature1>(
-                                                // Feature1(LineString(route.polyline),
-                                                // JsonObject(emptyMap()))
-                                                ) +
-                                                route.step.mapIndexed { idx, it ->
-                                                    val color =
-                                                            if (it.travelMode ==
-                                                                            RouteService.TravelMode
-                                                                                    .DRIVE
-                                                            ) {
-                                                                when {
-                                                                    it.speedRatio < 0.5 ->
-                                                                            "#F44336" // Red
-                                                                    it.speedRatio < 0.9 ->
-                                                                            "#FFC107" // Amber/Yellow
-                                                                    else -> "#4CAF50" // Green
-                                                                }
-                                                            } else "#1710F1"
+                )
+            }
 
-                                                    Feature1(
-                                                            LineString(it.polyline),
-                                                            JsonObject(
-                                                                    mapOf(
-                                                                            "color" to
-                                                                                    JsonPrimitive(
-                                                                                            color
-                                                                                    )
-                                                                    )
+            org.maplibre.compose.layers.CircleLayer(
+                "user-location-dot",
+                src,
+                color = const(Color(0xFF0E35F1)),
+                radius = const(8.dp),
+                strokeColor = const(Color.White),
+                strokeWidth = const(2.dp)
+            )
+
+            org.maplibre.compose.layers.SymbolLayer(
+                "user-location-bearing",
+                src,
+                iconImage = image(const("arrow")),
+                iconRotate = feature["bearing"].cast(),
+                iconRotationAlignment = const(org.maplibre.compose.expressions.value.IconRotationAlignment.Map),
+                iconSize = const(0.6f),
+                iconColor = const(Color(0xFF0E35F1))
+            )
+        }
+
+        outlineSource?.let { outlineSource ->
+            routeSource?.let { routeSource ->
+                when (selectedFeature) {
+                    is SpecificFeature.Admin0Label -> {
+                        LaunchedEffect(selectedFeature, outlineSource, styleJson) {
+                            outlineSource.setData(
+                                GeoJsonData.Features(
+                                    FeatureCollection(
+                                        listOf(
+                                            createInvertedMask(
+                                                CountryMap.getAdmin0(
+                                                    context,
+                                                    selectedFeature.iso
+                                                )!!
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        }
+                        FillLayer(
+                            "global-mask",
+                            outlineSource,
+                            color = const(Color.Black.copy(alpha = 0.4f))
+                        )
+                        LineLayer(
+                            "layer2",
+                            outlineSource,
+                            color = const(Color.Red)
+                        )
+                    }
+                    is SpecificFeature.Admin1Label -> {
+                        LaunchedEffect(selectedFeature, outlineSource, styleJson) {
+                            outlineSource.setData(
+                                GeoJsonData.Features(
+                                    FeatureCollection(
+                                        listOf(
+                                            createInvertedMask(
+                                                CountryMap.getAdmin1(
+                                                    context,
+                                                    selectedFeature.iso
+                                                )!!
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        }
+                        FillLayer(
+                            "global-mask",
+                            outlineSource,
+                            color = const(Color.Black.copy(alpha = 0.4f))
+                        )
+                        LineLayer(
+                            "layer2",
+                            outlineSource,
+                            color = const(Color.Red)
+                        )
+                    }
+                    is SpecificFeature.Route -> {
+                        if (route != null) {
+                            LaunchedEffect(route, routeSource, styleJson) {
+                                if (route is RouteService.Route) {
+                                    val features: List<Feature1> =
+                                        route.step.map { it ->
+                                            val color =
+                                                if (it.travelMode ==
+                                                    RouteService.TravelMode
+                                                        .DRIVE
+                                                ) {
+                                                    when {
+                                                        it.speedRatio < 0.5 ->
+                                                            "#F44336" // Red
+                                                        it.speedRatio < 0.9 ->
+                                                            "#FFC107" // Amber/Yellow
+                                                        else -> "#4CAF50" // Green
+                                                    }
+                                                } else "#1710F1"
+
+                                            Feature1(
+                                                LineString(it.polyline),
+                                                JsonObject(
+                                                    mapOf(
+                                                        "color" to
+                                                            JsonPrimitive(
+                                                                color
                                                             )
                                                     )
-                                                }
-                                routeSource.setData(
+                                                )
+                                            )
+                                        }
+                                    routeSource.setData(
                                         GeoJsonData.Features(FeatureCollection(features))
-                                )
-                            } else if (route is TransitRoute) {
-                                val features: List<Feature1> =
+                                    )
+                                } else if (route is TransitRoute) {
+                                    val features: List<Feature1> =
                                         route.steps.map {
                                             when (it) {
                                                 is TransitRoute.Step.WalkStep -> {
                                                     Feature1(
-                                                            LineString(it.polyline),
-                                                            JsonObject(
-                                                                    mapOf(
-                                                                            "color" to
-                                                                                    JsonPrimitive(
-                                                                                            "#1710F1"
-                                                                                    )
+                                                        LineString(it.polyline),
+                                                        JsonObject(
+                                                            mapOf(
+                                                                "color" to
+                                                                    JsonPrimitive(
+                                                                        "#1710F1"
                                                                     )
                                                             )
+                                                        )
                                                     )
                                                 }
                                                 is TransitRoute.Step.TransitStep -> {
                                                     Feature1(
-                                                            LineString(it.polyline),
-                                                            JsonObject(
-                                                                    mapOf(
-                                                                            "color" to
-                                                                                    JsonPrimitive(
-                                                                                            it.lineColor
-                                                                                    )
+                                                        LineString(it.polyline),
+                                                        JsonObject(
+                                                            mapOf(
+                                                                "color" to
+                                                                    JsonPrimitive(
+                                                                        it.lineColor
                                                                     )
                                                             )
+                                                        )
                                                     )
                                                 }
                                             }
                                         }
-                                routeSource.setData(
+                                    routeSource.setData(
                                         GeoJsonData.Features(FeatureCollection(features))
-                                )
+                                    )
+                                }
                             }
-                        }
-                        LineLayer(
+                            LineLayer(
                                 "route",
                                 routeSource,
                                 color = feature["color"].cast<StringValue>().convertToColor(),
                                 width = const(8.dp),
                                 cap = const(LineCap.Round)
-                        )
+                            )
+                        }
                     }
+                    else -> Unit
                 }
-                else -> Unit
             }
         }
     }
-}
 }
 
 private fun createInvertedMask(countryFeature: Feature1): Feature1 {
     // 1. World Rectangle (Clockwise)
     val worldOuterRing =
-            listOf(
-                    Position(-180.0, 90.0), // Top Left
-                    Position(180.0, 90.0), // Top Right
-                    Position(180.0, -90.0), // Bottom Right
-                    Position(-180.0, -90.0), // Bottom Left
-                    Position(-180.0, 90.0) // Close
-            )
+        listOf(
+            Position(-180.0, 90.0), // Top Left
+            Position(180.0, 90.0), // Top Right
+            Position(180.0, -90.0), // Bottom Right
+            Position(-180.0, -90.0), // Bottom Left
+            Position(-180.0, 90.0) // Close
+        )
 
     // 2. Extract and Reverse the country rings (force them to be holes)
     val holes =
-            when (val geom = countryFeature.geometry) {
-                is Polygon -> listOf(geom.coordinates.first().reversed())
-                is MultiPolygon -> geom.coordinates.map { it.first().reversed() }
-                else -> emptyList()
-            }
+        when (val geom = countryFeature.geometry) {
+            is Polygon -> listOf(geom.coordinates.first().reversed())
+            is MultiPolygon -> geom.coordinates.map { it.first().reversed() }
+            else -> emptyList()
+        }
 
     // 3. Create Polygon: [Outer, Hole1, Hole2...]
     val donutGeometry = Polygon(listOf(worldOuterRing) + holes)
