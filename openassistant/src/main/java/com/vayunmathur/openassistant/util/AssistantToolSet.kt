@@ -16,6 +16,7 @@ import com.vayunmathur.library.intents.music.MusicSearchResult
 import com.vayunmathur.library.intents.music.PlayMusicData
 import com.vayunmathur.openassistant.MainActivity
 import com.vayunmathur.library.intents.notes.NoteData
+import com.vayunmathur.library.util.DatabaseViewModel
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
@@ -185,12 +186,45 @@ object JsonSchemaValidator {
 }
 
 class AssistantToolSet(
-    private val context: Context
+    private val context: Context,
+    private val viewModel: DatabaseViewModel? = null,
+    private val conversationId: Long = -1L
 ) : ToolSet {
 
+    companion object {
+        fun getMissingAppMessage(packageName: String): String {
+            val appName = when (packageName) {
+                "com.vayunmathur.notes" -> "Notes"
+                "com.vayunmathur.contacts" -> "Contacts"
+                "com.vayunmathur.calendar" -> "Calendar"
+                "com.vayunmathur.findfamily" -> "FindFamily"
+                "com.vayunmathur.music" -> "Music"
+                else -> packageName
+            }
+            return "The $appName app is required but not installed. [Download from GitHub](https://github.com/vayun-mathur/Modern-Apps)."
+        }
+    }
+
+    private suspend fun handleMissingApp(packageName: String): String {
+        Log.d("AssistantToolSet", "Handling missing app: $packageName")
+        InferenceService.halt = true
+        if (viewModel != null && conversationId != -1L) {
+            Log.d("AssistantToolSet", "Inserting tool error message for $packageName")
+            viewModel.upsert(com.vayunmathur.openassistant.data.Message(
+                conversationId = conversationId,
+                text = getMissingAppMessage(packageName),
+                role = "tool",
+                timestamp = Clock.System.now().toEpochMilliseconds()
+            ))
+            Log.d("AssistantToolSet", "Throwing StopInferenceException")
+            throw StopInferenceException()
+        }
+        return getMissingAppMessage(packageName)
+    }
+
     @Tool(description = "Get a list of all notes")
-    fun get_notes(): String {
-        return try {
+    fun get_notes(): String = runBlocking {
+        try {
             val result: List<NoteData> = launchIntent(
                 context,
                 "com.vayunmathur.notes",
@@ -198,12 +232,13 @@ class AssistantToolSet(
                 Unit
             )
             result.toString()
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: MissingAppException) { handleMissingApp(e.packageName) }
+        catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Tool(description = "Create a new note in the notes app. Should only be used with EXPLICIT request by user")
-    fun create_note(title: String, content: String): String {
-        return try {
+    fun create_note(title: String, content: String): String = runBlocking {
+        try {
             launchIntentU(
                 context,
                 "com.vayunmathur.notes",
@@ -211,12 +246,13 @@ class AssistantToolSet(
                 NoteData(title, content)
             )
             "Success: Created note '$title'"
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: MissingAppException) { handleMissingApp(e.packageName) }
+        catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Tool(description = "Get a list of all contacts")
-    fun get_contacts(): String {
-        return try {
+    fun get_contacts(): String = runBlocking {
+        try {
             val result: List<ContactData> = launchIntent(
                 context,
                 "com.vayunmathur.contacts",
@@ -224,12 +260,13 @@ class AssistantToolSet(
                 Unit
             )
             result.toString()
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: MissingAppException) { handleMissingApp(e.packageName) }
+        catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Tool(description = "Create a new contact")
-    fun create_contact(name: String, phoneNumber: String): String {
-        return try {
+    fun create_contact(name: String, phoneNumber: String): String = runBlocking {
+        try {
             launchIntentU(
                 context,
                 "com.vayunmathur.contacts",
@@ -237,12 +274,13 @@ class AssistantToolSet(
                 ContactData(name, phoneNumber)
             )
             "Success: Created contact '$name'"
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: MissingAppException) { handleMissingApp(e.packageName) }
+        catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Tool(description = "Get a list of calendar events")
-    fun get_calendar_events(): String {
-        return try {
+    fun get_calendar_events(): String = runBlocking {
+        try {
             val result: List<EventData> = launchIntent(
                 context,
                 "com.vayunmathur.calendar",
@@ -250,12 +288,13 @@ class AssistantToolSet(
                 Unit
             )
             result.toString()
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: MissingAppException) { handleMissingApp(e.packageName) }
+        catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Tool(description = "Create a new calendar event")
-    fun create_calendar_event(title: String, start: Double, end: Double, location: String = ""): String {
-        return try {
+    fun create_calendar_event(title: String, start: Double, end: Double, location: String = ""): String = runBlocking {
+        try {
             launchIntentU(
                 context,
                 "com.vayunmathur.calendar",
@@ -263,26 +302,27 @@ class AssistantToolSet(
                 EventData(title, start.toLong(), end.toLong(), location)
             )
             "Success: Created event '$title'"
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: MissingAppException) { handleMissingApp(e.packageName) }
+        catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Tool(description = "Get a list of family members and their current locations")
-    fun get_family_locations(): String {
-        return try {
+    fun get_family_locations(): String = runBlocking {
+        try {
             val result: List<FamilyMemberData> = launchIntent(
                 context,
                 "com.vayunmathur.findfamily",
                 "com.vayunmathur.findfamily.intents.GetIntent",
                 Unit
             )
-            println(result)
             result.toString()
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: MissingAppException) { handleMissingApp(e.packageName) }
+        catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Tool(description = "Search for music (songs, albums, artists, or playlists)")
-    fun search_music(query: String): String {
-        return try {
+    fun search_music(query: String): String = runBlocking {
+        try {
             val result: List<MusicSearchResult> = launchIntent(
                 context,
                 "com.vayunmathur.music",
@@ -290,12 +330,13 @@ class AssistantToolSet(
                 query
             )
             result.toString()
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: MissingAppException) { handleMissingApp(e.packageName) }
+        catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Tool(description = "Play music given its id and type (song, album, artist, or playlist)")
-    fun play_music(id: Double, type: String): String {
-        return try {
+    fun play_music(id: Double, type: String): String = runBlocking {
+        try {
             launchIntentU(
                 context,
                 "com.vayunmathur.music",
@@ -303,7 +344,8 @@ class AssistantToolSet(
                 PlayMusicData(id.toLong(), type),
             )
             "Success: Playing music"
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: MissingAppException) { handleMissingApp(e.packageName) }
+        catch (e: Exception) { "Error: ${e.message}" }
     }
 
     @Tool(description = "Get the current date and time in the local timezone")
@@ -322,13 +364,15 @@ class AssistantToolSet(
     }
 
     @Tool(description = "Open an app given its package id")
-    fun open_app(@ToolParam(description = "package id") packageId: String): String {
+    fun open_app(@ToolParam(description = "package id") packageId: String): String = runBlocking {
         val intent = context.packageManager.getLaunchIntentForPackage(packageId)
-        return if (intent != null) {
+        if (intent != null) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             "Success: Opened $packageId"
-        } else "Error: App not found"
+        } else {
+            handleMissingApp(packageId)
+        }
     }
 
     @Tool(description = "Send a message")
@@ -366,21 +410,31 @@ class AssistantToolSet(
     fun get_weather(latitude: Double, longitude: Double): String = "Weather: 22°C, Sunny."
 }
 
+class MissingAppException(val packageName: String) : Exception("App $packageName is not installed.")
+class StopInferenceException : Exception("STOP")
+
 inline fun <reified Input : Any, reified Output : Any> launchIntent(
     context: Context,
     packageName: String,
     className: String,
-    input: Input,
+    input: Input
 ): Output = runBlocking {
     val stringOutput = MainActivity.intentLauncher.launch(context, packageName, className, serializer<Input>(), input)
+    if (stringOutput == "package $packageName doesn't exist") {
+        throw MissingAppException(packageName)
+    }
     Json.decodeFromString(serializer<Output>(), stringOutput)
 }
 inline fun <reified Input : Any> launchIntentU(
     context: Context,
     packageName: String,
     className: String,
-    input: Input,
+    input: Input
 ): Unit = runBlocking {
     val stringOutput = MainActivity.intentLauncher.launch(context, packageName, className, serializer<Input>(), input)
+    if (stringOutput == "package $packageName doesn't exist") {
+        throw MissingAppException(packageName)
+    }
     Json.decodeFromString(serializer<Unit>(), stringOutput)
 }
+

@@ -34,6 +34,7 @@ class InferenceService : Service() {
 
     companion object {
         var newTitle: String? = null
+        var halt: Boolean = false
     }
 
     private sealed class InferenceJob {
@@ -61,7 +62,7 @@ class InferenceService : Service() {
     private var currentConversation: com.google.ai.edge.litertlm.Conversation? = null
     private var currentConversationId: Long = -1L
 
-    val db by lazy { buildDatabase<AppDatabase>() }
+    val db by lazy { buildDatabase<AppDatabase>(migrations = AppDatabase.MIGRATIONS) }
     val viewModel by lazy { DatabaseViewModel(db, Conversation::class to db.conversationDao(), Message::class to db.messageDao()) }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -357,7 +358,7 @@ class InferenceService : Service() {
         currentConversation = engine?.createConversation(ConversationConfig(
             systemInstruction = Contents.of(systemPrompt),
             initialMessages = initialMessages,
-            tools = listOf(tool(AssistantToolSet(applicationContext))),
+            tools = listOf(tool(AssistantToolSet(applicationContext, viewModel, id))),
             automaticToolCalling = true,
         ))
         currentConversationId = id
@@ -388,8 +389,19 @@ class InferenceService : Service() {
         val stream = conv.sendMessageAsync(com.google.ai.edge.litertlm.Message.user(Contents.of(contents)))
 
         stream.catch { e ->
-            updateMessageInDb(aiMsgId, getString(R.string.error_prefix, e.message ?: ""))
+            Log.d("InferenceService", "Caught inference error: ${e::class.simpleName}", e)
+            if (e is MissingAppException || e is StopInferenceException || e.cause is StopInferenceException || halt) {
+                halt = false
+                viewModel.delete(viewModel.get<Message>(aiMsgId))
+            } else {
+                updateMessageInDb(aiMsgId, getString(R.string.error_prefix, e.message ?: ""))
+            }
         }.collect { chunk ->
+            if (halt) {
+                halt = false
+                viewModel.delete(viewModel.get<Message>(aiMsgId))
+                throw CancellationException("HALT")
+            }
             val chunkText = chunk.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
             fullResponseText += chunkText
             displayedText += chunkText

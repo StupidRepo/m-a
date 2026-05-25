@@ -2,6 +2,7 @@ package com.vayunmathur.library.util
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.ParagraphStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -257,6 +258,27 @@ fun parseMarkdown(
 
         // 5. Inline Formatting (Post-processing)
         
+        // Links
+        Regex("\\[(.*?)\\]\\((.*?)\\)").findAll(finalText).forEach { match ->
+            val textStart = match.groups[1]!!.range.first
+            val textEnd = match.groups[1]!!.range.last + 1
+            val url = match.groups[2]!!.value
+
+            hideRange(match.range.first, textStart)
+            hideRange(textEnd, match.range.last + 1)
+
+            addStyle(
+                SpanStyle(color = Color(0xFF2196F3), textDecoration = TextDecoration.Underline),
+                textStart,
+                textEnd
+            )
+            addLink(
+                LinkAnnotation.Url(url),
+                textStart,
+                textEnd
+            )
+        }
+
         // Bold
         Regex("(\\*\\*|__)(.*?)\\1").findAll(finalText).forEach { match ->
             val m = match.groups[1]!!.value

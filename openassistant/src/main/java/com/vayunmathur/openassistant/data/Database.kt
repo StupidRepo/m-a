@@ -8,6 +8,8 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.vayunmathur.library.util.DefaultConverters
 import com.vayunmathur.library.util.TrueDao
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Entity
 data class Conversation(
@@ -27,6 +29,7 @@ data class Message(
     val role: String,
     val imagePaths: List<String> = emptyList(), // Store as paths for better persistence
     val hasAudio: Boolean = false,
+    val missingAppPackage: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     @PrimaryKey(autoGenerate = true)
     override val id: Long = 0,
@@ -40,8 +43,18 @@ interface ConversationDao: TrueDao<Conversation>
 interface MessageDao: TrueDao<Message>
 
 @TypeConverters(DefaultConverters::class)
-@Database(entities = [Conversation::class, Message::class], version = 1)
+@Database(entities = [Conversation::class, Message::class], version = 2)
 abstract class AppDatabase: RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
+
+    companion object {
+        val MIGRATIONS = listOf(
+            object : Migration(1, 2) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE Message ADD COLUMN missingAppPackage TEXT")
+                }
+            }
+        )
+    }
 }

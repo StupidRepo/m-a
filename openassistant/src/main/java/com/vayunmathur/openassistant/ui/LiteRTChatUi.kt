@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.core.net.toUri
 import com.vayunmathur.openassistant.R
 import com.vayunmathur.openassistant.Route
 import com.vayunmathur.openassistant.data.Conversation
@@ -270,7 +271,9 @@ fun ChatInput(
 
 @Composable
 fun ChatBubble(message: Message) {
+    val context = LocalContext.current
     val isUser = message.role == "user"
+    val isTool = message.role == "tool"
     val clipboardManager = LocalClipboardManager.current
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
         if (isUser) {
@@ -284,6 +287,53 @@ fun ChatBubble(message: Message) {
                     if (message.text.isNotBlank()) Text(message.text, Modifier.padding(8.dp, 4.dp), color = MaterialTheme.colorScheme.onPrimary, fontSize = 15.sp)
                 }
             }
+        } else if (isTool) {
+            val linkRegex = remember { Regex("\\[(.*?)\\]\\((.*?)\\)") }
+            val match = remember(message.text) { linkRegex.find(message.text) }
+            val cleanText = remember(message.text, match) {
+                if (match != null) message.text.replace(match.value, match.groups[1]!!.value)
+                else message.text
+            }
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.padding(vertical = 4.dp).widthIn(max = 350.dp)
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            painterResource(android.R.drawable.ic_dialog_info),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            cleanText,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp)
+                        )
+                    }
+                    if (match != null) {
+                        val url = match.groups[2]!!.value
+                        val label = match.groups[1]!!.value
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, url.toUri()).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {}
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text(label)
+                        }
+                    }
+                }
+            }
         } else if (message.text.isNotBlank()) {
             Text(
                 parseMarkdown(message.text, showMarkers = false),
@@ -291,7 +341,7 @@ fun ChatBubble(message: Message) {
                 style = LocalTextStyle.current.copy(fontSize = 16.sp, lineHeight = 22.sp)
             )
         }
-        if (message.text.isNotBlank()) {
+        if (message.text.isNotBlank() && !isTool) {
             IconButton(
                 onClick = { clipboardManager.setText(AnnotatedString(message.text)) },
                 modifier = Modifier.size(32.dp).padding(top = 4.dp)

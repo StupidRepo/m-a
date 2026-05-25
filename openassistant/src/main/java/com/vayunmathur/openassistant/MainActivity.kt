@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
         intentLauncher = IntentLauncher(this)
 
         val ds = DataStoreUtils.getInstance(this)
-        val db = buildDatabase<AppDatabase>()
+        val db = buildDatabase<AppDatabase>(migrations = AppDatabase.MIGRATIONS)
         val viewModel = DatabaseViewModel(db, Conversation::class to db.conversationDao(), Message::class to db.messageDao())
 
         val oldModelFile = File(applicationContext.getExternalFilesDir(null)!!, "gemma4.litertlm")
