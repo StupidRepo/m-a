@@ -3,7 +3,6 @@ package com.vayunmathur.files
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipDescription
-import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -11,9 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.os.FileObserver
 import android.provider.Settings
-import android.provider.OpenableColumns
 import android.view.View
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
@@ -22,6 +19,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -60,12 +58,11 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.retain.LocalRetainedValuesStore
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,11 +84,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.workDataOf
-import com.vayunmathur.files.util.UnzipWorker
-import com.vayunmathur.files.util.ZipWorker
+import com.vayunmathur.files.util.FilesViewModel
+import com.vayunmathur.files.util.FilesViewModelFactory
 import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.ui.IconArchive
 import com.vayunmathur.library.ui.IconChevronRight
@@ -101,24 +95,24 @@ import com.vayunmathur.library.ui.IconEdit
 import com.vayunmathur.library.ui.IconSave
 import com.vayunmathur.library.ui.IconUnarchive
 import kotlin.math.roundToLong
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.launch
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toOkioPath
 import okio.Path.Companion.toPath
-import okio.openZip
-import okio.source
-import androidx.core.content.edit
 
 class MainActivity : ComponentActivity() {
-    private var incomingUris by mutableStateOf<List<Uri>?>(null)
+    private val viewModel: FilesViewModel by viewModels { FilesViewModelFactory(application) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handleIntent(intent)
         enableEdgeToEdge()
-        setContent { DynamicTheme { HomeDirectoryPage(incomingUris) { incomingUris = null } } }
+        setContent { DynamicTheme { HomeDirectoryPage(viewModel) } }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshPermissions()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -133,38 +127,29 @@ class MainActivity : ComponentActivity() {
 
         if (Intent.ACTION_SEND == action && type != null) {
             val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-            if (uri != null) {
-                incomingUris = listOf(uri)
-            }
+            if (uri != null) viewModel.setIncomingUris(listOf(uri))
         } else if (Intent.ACTION_SEND_MULTIPLE == action && type != null) {
             val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
-            if (uris != null) {
-                incomingUris = uris
-            }
+            if (uris != null) viewModel.setIncomingUris(uris)
         }
     }
 }
 
 @Composable
-fun HomeDirectoryPage(incomingUris: List<Uri>? = null, onClearIncoming: () -> Unit = {}) {
+fun HomeDirectoryPage(viewModel: FilesViewModel) {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("files_prefs", Context.MODE_PRIVATE) }
-
-    var isFilesGranted by remember { mutableStateOf(Environment.isExternalStorageManager()) }
-    var hasPromptedNotifications by remember {
-        mutableStateOf(prefs.getBoolean("has_prompted_notifications", false))
-    }
+    val isFilesGranted by viewModel.isFilesGranted.collectAsState()
+    val hasPromptedNotifications by viewModel.hasPromptedNotifications.collectAsState()
     var showNotificationDialog by remember { mutableStateOf(false) }
 
     val filesLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            isFilesGranted = Environment.isExternalStorageManager()
+            viewModel.refreshPermissions()
         }
 
     val notificationsLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-            prefs.edit { putBoolean("has_prompted_notifications", true) }
-            hasPromptedNotifications = true
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+            viewModel.setNotificationsPrompted()
             showNotificationDialog = false
         }
 
@@ -176,8 +161,7 @@ fun HomeDirectoryPage(incomingUris: List<Uri>? = null, onClearIncoming: () -> Un
             if (!isGranted) {
                 showNotificationDialog = true
             } else {
-                prefs.edit { putBoolean("has_prompted_notifications", true) }
-                hasPromptedNotifications = true
+                viewModel.setNotificationsPrompted()
             }
         }
     }
@@ -185,8 +169,7 @@ fun HomeDirectoryPage(incomingUris: List<Uri>? = null, onClearIncoming: () -> Un
     if (showNotificationDialog) {
         AlertDialog(
             onDismissRequest = {
-                prefs.edit { putBoolean("has_prompted_notifications", true) }
-                hasPromptedNotifications = true
+                viewModel.setNotificationsPrompted()
                 showNotificationDialog = false
             },
             title = { Text(stringResource(R.string.enable_notifications)) },
@@ -204,8 +187,7 @@ fun HomeDirectoryPage(incomingUris: List<Uri>? = null, onClearIncoming: () -> Un
             dismissButton = {
                 TextButton(
                     onClick = {
-                        prefs.edit { putBoolean("has_prompted_notifications", true) }
-                        hasPromptedNotifications = true
+                        viewModel.setNotificationsPrompted()
                         showNotificationDialog = false
                     }) { Text(stringResource(R.string.skip)) }
             })
@@ -225,9 +207,7 @@ fun HomeDirectoryPage(incomingUris: List<Uri>? = null, onClearIncoming: () -> Un
                 }) { Text(stringResource(R.string.grant_all_files_access)) }
         }
     } else {
-        DirectoryPage(
-            Environment.getExternalStorageDirectory().toOkioPath(), incomingUris, onClearIncoming
-        )
+        DirectoryPage(viewModel)
     }
 }
 
@@ -253,26 +233,47 @@ fun Path.deleteRecursively(fileSystem: FileSystem = fs) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DirectoryPage(
-    rootFile: Path, incomingUris: List<Uri>? = null, onClearIncoming: () -> Unit = {}
-) {
+fun DirectoryPage(viewModel: FilesViewModel) {
     val context = LocalContext.current
     val resources = LocalResources.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
-    var currentFileSystem by remember { mutableStateOf(fs) }
-    var currentDirectory by remember { mutableStateOf(rootFile) }
-    var zipPath by remember { mutableStateOf<Path?>(null) }
+    val currentFileSystem by viewModel.currentFileSystem.collectAsState()
+    val currentDirectory by viewModel.currentDirectory.collectAsState()
+    val zipPath by viewModel.zipPath.collectAsState()
+    val selectedPaths by viewModel.selectedPaths.collectAsState()
+    val entries by viewModel.entries.collectAsState()
+    val incomingUris by viewModel.incomingUris.collectAsState()
 
     val isReadOnly = zipPath != null
 
-    var selectedPaths by remember(
-        currentDirectory, currentFileSystem
-    ) { mutableStateOf(setOf<Path>()) }
+    // UI-only state (kept in compose)
     var pathBeingRenamed by remember { mutableStateOf<Path?>(null) }
     var showArchiveDialog by remember { mutableStateOf(false) }
     var archiveName by remember { mutableStateOf("archive.zip") }
+
+    // Forward VM messages to the local SnackbarHostState.
+    LaunchedEffect(snackbarHostState) {
+        viewModel.snackbarMessages.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    // Launch ACTION_VIEW intents emitted by the VM (with no-app-found fallback).
+    LaunchedEffect(Unit) {
+        viewModel.intents.collect { intent ->
+            try {
+                context.startActivity(intent)
+            } catch (_: Exception) {
+                viewModel.showMessage(resources.getString(R.string.no_app_found_to_open_file))
+            }
+        }
+    }
+
+    // Reset selection-dependent UI state when the VM's selection clears.
+    LaunchedEffect(selectedPaths) {
+        if (selectedPaths.isEmpty()) pathBeingRenamed = null
+    }
 
     if (showArchiveDialog) {
         AlertDialog(
@@ -289,24 +290,8 @@ fun DirectoryPage(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val destPath = currentDirectory.resolve(
-                            if (archiveName.endsWith(".zip")) archiveName
-                            else "$archiveName.zip"
-                        )
-                        val zipWork = OneTimeWorkRequestBuilder<ZipWorker>().setInputData(
-                            workDataOf("source_paths" to selectedPaths.map {
-                                it.toString()
-                            }.toTypedArray(), "dest_path" to destPath.toString())
-                        ).build()
-                        WorkManager.getInstance(context).enqueue(zipWork)
-                        selectedPaths = emptySet()
-                        pathBeingRenamed = null
+                        viewModel.archive(archiveName)
                         showArchiveDialog = false
-                        scope.launch {
-                            snackbarHostState.showSnackbar(
-                                resources.getString(R.string.archiving_started)
-                            )
-                        }
                     }) { Text(stringResource(R.string.archive)) }
             },
             dismissButton = {
@@ -316,7 +301,7 @@ fun DirectoryPage(
             })
     }
 
-    val zipToUnzip = remember(selectedPaths) {
+    val zipToUnzip = remember(selectedPaths, currentFileSystem) {
         if (selectedPaths.size == 1 && !selectedPaths.first()
                 .isDirectory(currentFileSystem) && selectedPaths.first().name.endsWith(
                 ".zip", ignoreCase = true
@@ -332,60 +317,15 @@ fun DirectoryPage(
                 val path = uri.path?.split(":")?.lastOrNull()?.let {
                     Environment.getExternalStorageDirectory().resolve(it).toOkioPath()
                 } ?: currentDirectory
-
-                val unzipWork = OneTimeWorkRequestBuilder<UnzipWorker>().setInputData(
-                    workDataOf(
-                        "zip_path" to zipToUnzip.toString(), "dest_path" to path.toString()
-                    )
-                ).build()
-                WorkManager.getInstance(context).enqueue(unzipWork)
-
-                selectedPaths = emptySet()
-                scope.launch {
-                    snackbarHostState.showSnackbar(
-                        resources.getString(R.string.unzipping_started_to, path.name)
-                    )
-                }
+                viewModel.unzip(zipToUnzip, path)
             }
         }
 
-    // Data state
-    var filesList by remember(currentDirectory, currentFileSystem) {
-        mutableStateOf(
-            currentDirectory.listFiles(currentFileSystem).partition {
-                it.isDirectory(currentFileSystem)
-            })
-    }
-
-    fun forceRefresh() {
-        filesList = currentDirectory.listFiles(currentFileSystem).partition {
-            it.isDirectory(currentFileSystem)
-        }
-    }
-
-    LaunchedEffect(currentDirectory, currentFileSystem) {
-        if (currentFileSystem == fs) {
-            val observer = object : FileObserver(
-                currentDirectory.toFile(), CREATE or DELETE or MOVED_FROM or MOVED_TO
-            ) {
-                override fun onEvent(event: Int, path: String?) {
-                    forceRefresh()
-                }
-            }
-            observer.startWatching()
-            try {
-                awaitCancellation()
-            } finally {
-                observer.stopWatching()
-            }
-        }
-    }
-
-    val (directories, files) = filesList
+    val (directories, files) = entries
 
     val focusManager = LocalFocusManager.current
 
-    val root = remember { Environment.getExternalStorageDirectory().toOkioPath() }
+    val root = viewModel.rootDirectory
 
     val breadcrumbs = remember(currentDirectory, zipPath, currentFileSystem) {
         if (zipPath == null) {
@@ -425,20 +365,8 @@ fun DirectoryPage(
     }
 
     BackHandler(currentDirectory != root || selectedPaths.isNotEmpty() || zipPath != null) {
-        if (selectedPaths.isNotEmpty()) {
-            selectedPaths = emptySet()
-            pathBeingRenamed = null
-        } else if (zipPath != null) {
-            if (currentDirectory.toString() == "/" || currentDirectory.name.isEmpty()) {
-                currentFileSystem = fs
-                currentDirectory = zipPath!!.parent ?: root
-                zipPath = null
-            } else {
-                currentDirectory = currentDirectory.parent ?: "/".toPath()
-            }
-        } else {
-            currentDirectory = currentDirectory.parent ?: currentDirectory
-        }
+        pathBeingRenamed = null
+        viewModel.handleBack()
     }
 
     Scaffold(
@@ -449,7 +377,7 @@ fun DirectoryPage(
             ) {
                 focusManager.clearFocus()
                 pathBeingRenamed = null
-                selectedPaths = emptySet()
+                viewModel.clearSelection()
             }, snackbarHost = { SnackbarHost(snackbarHostState) }, topBar = {
             TopAppBar(title = {
                 Row(
@@ -490,36 +418,8 @@ fun DirectoryPage(
                                                             it
                                                         ).text.toString().toPath()
                                                     }
-                                                    var movedAny = false
-                                                    sources.forEach { sourcePath ->
-                                                        if (sourcePath.parent != path && sourcePath != path) {
-                                                            try {
-                                                                fs.atomicMove(
-                                                                    sourcePath, path.resolve(
-                                                                        sourcePath.name
-                                                                    )
-                                                                )
-                                                                movedAny = true
-                                                            } catch (
-                                                                e: Exception
-                                                            ) {
-                                                                scope.launch {
-                                                                    snackbarHostState.showSnackbar(
-                                                                        resources.getString(
-                                                                            R.string.move_failed,
-                                                                            e.localizedMessage
-                                                                        )
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    if (movedAny) {
-                                                        forceRefresh()
-                                                        selectedPaths = emptySet()
-                                                        pathBeingRenamed = null
-                                                        return true
-                                                    }
+                                                    viewModel.moveToBreadcrumb(sources, path)
+                                                    return true
                                                 }
                                                 return false
                                             }
@@ -544,9 +444,7 @@ fun DirectoryPage(
                                         }
                                     })
                                 .clickable {
-                                    currentFileSystem = fileSystem
-                                    currentDirectory = path
-                                    if (fileSystem == fs) zipPath = null
+                                    viewModel.navigateTo(path, fileSystem)
                                 }
                                 .padding(4.dp)) {
                             Text(
@@ -561,25 +459,11 @@ fun DirectoryPage(
             }, actions = {
                 if (selectedPaths.isNotEmpty()) {
                     IconButton(
-                        onClick = {
-                            selectedPaths = emptySet()
-                            pathBeingRenamed = null
-                        }) { IconClose() }
+                        onClick = { viewModel.clearSelection() }) { IconClose() }
                 }
                 if (incomingUris != null && !isReadOnly) {
                     IconButton(
-                        onClick = {
-                            scope.launch {
-                                incomingUris.forEach { uri ->
-                                    saveUriToPath(context, uri, currentDirectory)
-                                }
-                                onClearIncoming()
-                                forceRefresh()
-                                snackbarHostState.showSnackbar(
-                                    resources.getString(R.string.files_saved)
-                                )
-                            }
-                        }) { IconSave() }
+                        onClick = { viewModel.saveIncomingUris() }) { IconSave() }
                 }
                 if (!isReadOnly) {
                     if (selectedPaths.isNotEmpty()) {
@@ -604,14 +488,7 @@ fun DirectoryPage(
                     // Delete Button
                     if (selectedPaths.isNotEmpty()) {
                         IconButton(
-                            onClick = {
-                                selectedPaths.forEach {
-                                    it.deleteRecursively(currentFileSystem)
-                                }
-                                selectedPaths = emptySet()
-                                pathBeingRenamed = null
-                                forceRefresh()
-                            }) { IconDelete() }
+                            onClick = { viewModel.deleteSelection() }) { IconDelete() }
                     }
                 }
             })
@@ -631,16 +508,14 @@ fun DirectoryPage(
                     fileSystem = currentFileSystem,
                     isReadOnly = isReadOnly,
                     onRename = { newName ->
-                        currentFileSystem.atomicMove(child, child.parent!!.resolve(newName))
-                        forceRefresh()
                         pathBeingRenamed = null
-                        selectedPaths = emptySet()
+                        viewModel.rename(child, newName)
                     },
                     onToggleSelection = {
                         if (isReadOnly) return@DirectoryItem
                         if (pathBeingRenamed != null) pathBeingRenamed = null
                         if (!isSelected) {
-                            selectedPaths = selectedPaths + child
+                            viewModel.addToSelection(child)
                         }
                     },
                     onClick = {
@@ -648,87 +523,18 @@ fun DirectoryPage(
                             if (isSelected && pathBeingRenamed == child) {
                                 pathBeingRenamed = null
                             }
-                            selectedPaths = if (isSelected) selectedPaths - child
-                            else selectedPaths + child
+                            viewModel.toggleSelection(child)
                         } else if (child.isDirectory(currentFileSystem)) {
-                            currentDirectory = child
+                            viewModel.navigateTo(child, currentFileSystem)
                         } else if (child.name.endsWith(".zip", ignoreCase = true)) {
-                            try {
-                                val zipFs = currentFileSystem.openZip(child)
-                                currentFileSystem = zipFs
-                                zipPath = if (zipPath == null) child else zipPath
-                                currentDirectory = "/".toPath()
-                            } catch (e: Exception) {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        resources.getString(
-                                            R.string.could_not_open_zip, e.localizedMessage
-                                        )
-                                    )
-                                }
-                            }
-                        } else if (currentFileSystem == fs) {
-                            val file = child.toFile()
-                            val extension = file.extension
-                            val mimeType =
-                                MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-                                    ?: "*/*"
-
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                val uri = FileProvider.getUriForFile(
-                                    context, "${context.packageName}.fileprovider", file
-                                )
-                                setDataAndType(uri, mimeType)
-                                flags =
-                                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                            }
-                            try {
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        resources.getString(
-                                            R.string.no_app_found_to_open_file
-                                        )
-                                    )
-                                }
-                            }
+                            viewModel.openZipFile(child)
                         } else {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    resources.getString(R.string.zip_browse_only)
-                                )
-                            }
+                            viewModel.openFile(child)
                         }
                     },
                     onMove = { sources ->
                         if (!isReadOnly && child.isDirectory(currentFileSystem)) {
-                            var movedAny = false
-                            sources.forEach { source ->
-                                if (source != child && !child.toString()
-                                        .startsWith(source.toString())
-                                ) {
-                                    try {
-                                        currentFileSystem.atomicMove(
-                                            source, child.resolve(source.name)
-                                        )
-                                        movedAny = true
-                                    } catch (e: Exception) {
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                resources.getString(
-                                                    R.string.move_failed, e.localizedMessage
-                                                )
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            if (movedAny) {
-                                forceRefresh()
-                                selectedPaths = emptySet()
-                                pathBeingRenamed = null
-                            }
+                            viewModel.moveInto(sources, child)
                         }
                     },
                     onStartDrag = {
@@ -916,27 +722,4 @@ fun byteSizeString(bytes: Long): String {
     }
     bytesS = (bytesS * 100).roundToLong() / 100.0
     return "$bytesS ${units[unitIdx]}"
-}
-
-private fun saveUriToPath(context: Context, uri: Uri, targetDir: Path) {
-    val name =
-        getFileName(context.contentResolver, uri) ?: "shared_file_${System.currentTimeMillis()}"
-    val targetPath = targetDir.resolve(name)
-    context.contentResolver.openInputStream(uri)?.use { input ->
-        fs.write(targetPath) { writeAll(input.source()) }
-    }
-}
-
-private fun getFileName(contentResolver: ContentResolver, uri: Uri): String? {
-    if (uri.scheme == "content") {
-        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex != -1) {
-                    return cursor.getString(nameIndex)
-                }
-            }
-        }
-    }
-    return uri.path?.substringAfterLast('/')
 }

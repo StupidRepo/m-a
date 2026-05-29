@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,48 +21,64 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.vayunmathur.files.R
+import com.vayunmathur.files.util.TextEditorViewModel
 import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.ui.IconEdit
 import com.vayunmathur.library.ui.IconSave
 import com.vayunmathur.library.ui.IconVisible
-import com.vayunmathur.files.R
 
 class TextEditorActivity : ComponentActivity() {
+    private val viewModel: TextEditorViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val uri = intent.data!!
+        viewModel.load(uri)
         setContent {
             DynamicTheme {
-                TextEditorScreen(uri)
+                TextEditorScreen(uri, viewModel)
             }
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class) // Only needed if on older 1.7.x versions
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TextEditorScreen(uri: Uri) {
-    val context = LocalContext.current
-
-    var initialContent by remember {
-        mutableStateOf(context.contentResolver.openInputStream(uri)?.use {
-            it.bufferedReader().readText()
-        } ?: "")
+private fun TextEditorScreen(uri: Uri, viewModel: TextEditorViewModel) {
+    val initialContent by viewModel.initialContent.collectAsState()
+    val content = initialContent
+    if (content == null) {
+        // Loading: render the bar only so the screen isn't blank during async read.
+        Scaffold(
+            Modifier.imePadding(),
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(uri.lastPathSegment ?: stringResource(R.string.file_fallback))
+                    },
+                )
+            },
+        ) { }
+    } else {
+        TextEditorLoaded(uri, content, viewModel)
     }
+}
 
-    // 1. Initialize the state with the file content
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun TextEditorLoaded(uri: Uri, initialContent: String, viewModel: TextEditorViewModel) {
     val state = remember { TextFieldState(initialText = initialContent) }
-
     var isEditing by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -72,25 +89,20 @@ private fun TextEditorScreen(uri: Uri) {
                 actions = {
                     IconButton(onClick = {
                         if (isEditing && state.text != initialContent) {
-                            // Save Logic: Use the state.text buffer directly
-                            context.contentResolver.openOutputStream(uri)?.use {
-                                it.bufferedWriter().write(state.text.toString())
-                            }
+                            viewModel.save(uri, state.text.toString())
                         }
                         isEditing = !isEditing
                     }) {
-                        if (isEditing) if(initialContent == state.text) IconVisible() else IconSave() else IconEdit()
+                        if (isEditing) if (initialContent == state.text) IconVisible() else IconSave() else IconEdit()
                     }
                 }
             )
         }
     ) { paddingValues ->
-        // 2. Wrap in a scrollable container that is NOT a LazyColumn
-        // BasicTextField2 handles its own internal scrolling much better
         Column(
             modifier = Modifier
                 .padding(paddingValues)
-                .fillMaxSize() // This works correctly with BasicTextField2
+                .fillMaxSize()
         ) {
             BasicTextField(
                 state = state,
@@ -98,12 +110,10 @@ private fun TextEditorScreen(uri: Uri) {
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),
                 readOnly = !isEditing,
-                // 3. Set the text style to match your theme
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                     color = MaterialTheme.colorScheme.onSurface
                 ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                // 4. Enable efficient line-based scrolling
                 lineLimits = TextFieldLineLimits.Default,
                 scrollState = rememberScrollState()
             )
