@@ -5,27 +5,30 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import com.vayunmathur.games.alchemist.R
 
 @SuppressLint("DiscouragedApi")
 @Composable
-fun DynamicAlchemyIcon(iconId: Long, modifier: Modifier = Modifier) {
+fun DynamicAlchemyIcon(iconId: Long, undiscovered: Boolean = false, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val resources = LocalResources.current
-    
     // 1. Construct the resource name string (e.g., "icon_001")
     val name = "icon_${iconId.toString().padStart(3, '0')}"
-    
     // 2. Look up the internal Android resource ID
-    val resId = remember(iconId) { 
+    val resId = remember(iconId) {
         val id = resources.getIdentifier(
             name,
             "drawable",
@@ -42,13 +45,36 @@ fun DynamicAlchemyIcon(iconId: Long, modifier: Modifier = Modifier) {
     }
 
     if (resId != 0) {
-        Image(
-            painter = painterResource(id = resId),
-            contentDescription = stringResource(R.string.alchemy_icon_content_description, iconId),
-            modifier = modifier.fillMaxSize()
-        )
+        Box(modifier = modifier.fillMaxSize()) {
+            Image(
+                painter = painterResource(id = resId),
+                contentDescription = stringResource(
+                    R.string.alchemy_icon_content_description,
+                    iconId
+                ),
+                modifier = modifier.fillMaxSize(),
+                colorFilter = if (undiscovered) ColorFilter.tint(
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                ) else null
+            )
+            if (undiscovered) {
+                Text(
+                    text = "?",
+                    modifier = Modifier.align(Alignment.Center),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
     } else {
         // Fallback if the icon ID doesn't exist
-        Box(modifier = modifier.fillMaxSize())
+        Box(modifier = modifier.fillMaxSize().background(Color.Gray)) {
+            Text(
+                text = "???",
+                modifier = Modifier.align(Alignment.Center),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }

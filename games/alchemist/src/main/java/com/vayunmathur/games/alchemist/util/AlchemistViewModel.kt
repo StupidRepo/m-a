@@ -10,9 +10,12 @@ import com.vayunmathur.games.alchemist.data.AlchemyRecipe
 import com.vayunmathur.library.util.AchievementsManager
 import com.vayunmathur.library.util.DataStoreUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -64,6 +67,10 @@ class AlchemistViewModel(application: Application) : AndroidViewModel(applicatio
     // --- Placed elements on the play area (committed positions) ---
     private val _placedElements = MutableStateFlow<List<PlacedItem>>(emptyList())
     val placedElements: StateFlow<List<PlacedItem>> = _placedElements.asStateFlow()
+
+    // --- One-shot events for newly-discovered items (drives the unlock toast) ---
+    private val _newUnlocksEvent = MutableSharedFlow<List<AlchemyItem>>(extraBufferCapacity = 5)
+    val newUnlocksEvent: SharedFlow<List<AlchemyItem>> = _newUnlocksEvent.asSharedFlow()
 
     init {
         // Load JSON synchronously so other consumers (e.g. AlchemistAchievementsManager
@@ -131,6 +138,17 @@ class AlchemistViewModel(application: Application) : AndroidViewModel(applicatio
         val toAdd = recipe.outputs.map { PlacedItem(it, target.offset) }
         _placedElements.update { list ->
             list.filterNot { it.key in toRemoveKeys } + toAdd
+        }
+
+        // Emit the new-discovery toast for any outputs not already in the
+        // inventory, then persist all outputs.
+        val knownIds = itemIds.value
+        val discovered = recipe.outputs
+            .filter { it !in knownIds }
+            .distinct()
+            .mapNotNull { id -> _allItems.value.find { it.id == id } }
+        if (discovered.isNotEmpty()) {
+            _newUnlocksEvent.tryEmit(discovered)
         }
         toAdd.forEach { unlockItem(it.id) }
     }

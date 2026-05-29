@@ -11,11 +11,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.vayunmathur.games.alchemist.data.AlchemyItem
 import com.vayunmathur.games.alchemist.ui.HomeScreen
 import com.vayunmathur.games.alchemist.ui.ItemDetailsScreen
+import com.vayunmathur.games.alchemist.ui.UnlockNotification
 import com.vayunmathur.games.alchemist.util.AlchemistViewModel
 import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.util.AchievementsManager
@@ -23,6 +27,9 @@ import com.vayunmathur.library.util.DataStoreUtils
 import com.vayunmathur.library.util.MainNavigation
 import com.vayunmathur.library.util.NavKey
 import com.vayunmathur.library.util.rememberNavBackStack
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 class MainActivity : ComponentActivity() {
@@ -56,9 +63,18 @@ fun Navigation(ds: DataStoreUtils, viewModel: AlchemistViewModel) {
     val achievementsManager = rememberAchievementsManager()
     val newAchievement by achievementsManager.newAchievement.collectAsState()
 
+    var showingUnlock by remember { mutableStateOf(false) }
+    var currentUnlocks by remember { mutableStateOf(emptyList<AlchemyItem>()) }
+
     LaunchedEffect(achievementsManager) {
-        achievementsManager.checkExistingAchievements()
+        launch { achievementsManager.checkExistingAchievements() }
         viewModel.bindAchievements(achievementsManager)
+        viewModel.newUnlocksEvent.collectLatest { items ->
+            currentUnlocks = items
+            showingUnlock = true
+            delay(3000)
+            showingUnlock = false
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -67,7 +83,7 @@ fun Navigation(ds: DataStoreUtils, viewModel: AlchemistViewModel) {
                 HomeScreen(backStack, viewModel, onOpenGameCenter = { backStack.add(Route.GameCenter) })
             }
             entry<Route.ItemDetails> {
-                ItemDetailsScreen(backStack, ds, it.item)
+                ItemDetailsScreen(backStack, ds, viewModel, it.item)
             }
             entry<Route.GameCenter> {
                 com.vayunmathur.library.ui.GameCenterScreen(
@@ -83,6 +99,11 @@ fun Navigation(ds: DataStoreUtils, viewModel: AlchemistViewModel) {
                 achievementsManager.dismissNotification()
             }
         }
+
+        UnlockNotification(
+            unlock = currentUnlocks,
+            showing = showingUnlock
+        )
     }
 }
 
