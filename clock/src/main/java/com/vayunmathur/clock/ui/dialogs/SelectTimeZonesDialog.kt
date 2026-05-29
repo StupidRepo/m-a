@@ -30,19 +30,20 @@ import androidx.compose.ui.window.Dialog
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.clock.R
 import com.vayunmathur.clock.Route
-import com.vayunmathur.clock.citiesToTimezones
+import com.vayunmathur.clock.util.ClockViewModel
 import com.vayunmathur.library.util.DataStoreUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun SelectTimeZonesDialog(backStack: NavBackStack<Route>, ds: DataStoreUtils) {
+fun SelectTimeZonesDialog(backStack: NavBackStack<Route>, ds: DataStoreUtils, clockViewModel: ClockViewModel) {
     val selectedTimeZones by ds.stringSetFlow("time_zones").collectAsState(initial = setOf())
+    val cities by clockViewModel.cities.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
 
     // Map all available IDs to a pair of (Clean City Name, Original ID)
-    val allOptions = remember(citiesToTimezones) {
-        citiesToTimezones?.entries?.map { Triple(it.key, it.value, "${it.key} ${it.value}".lowercase()) }
+    val allOptions = remember(cities) {
+        cities?.entries?.map { Triple(it.key, it.value, "${it.key} ${it.value}".lowercase()) }
     } ?: listOf()
 
     val filteredOptions by produceState(initialValue = allOptions, searchQuery) {

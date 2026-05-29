@@ -3,19 +3,18 @@ package com.vayunmathur.clock
 import android.Manifest
 import android.app.AlarmManager
 import android.app.NotificationManager
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.AlarmClock
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -43,8 +42,8 @@ import com.vayunmathur.clock.ui.StopwatchPage
 import com.vayunmathur.clock.ui.TimerPage
 import com.vayunmathur.clock.ui.dialogs.NewTimerDialog
 import com.vayunmathur.clock.ui.dialogs.SelectTimeZonesDialog
-import com.vayunmathur.clock.ui.sendTimerNotification
-import com.vayunmathur.clock.util.AlarmScheduler
+import com.vayunmathur.clock.util.ClockViewModel
+import com.vayunmathur.clock.util.ClockViewModelFactory
 import com.vayunmathur.clock.util.createNotificationChannels
 import com.vayunmathur.library.ui.DynamicTheme
 import com.vayunmathur.library.ui.dialog.TimePickerDialogContent
@@ -55,19 +54,18 @@ import com.vayunmathur.library.util.DialogPage
 import com.vayunmathur.library.util.MainNavigation
 import com.vayunmathur.library.util.buildDatabase
 import com.vayunmathur.library.util.rememberNavBackStack
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
 import kotlin.time.Clock
-import kotlin.time.Duration.Companion.seconds
-
-var citiesToTimezones: Map<String, String>? by mutableStateOf(null)
 
 class MainActivity : ComponentActivity() {
+    private lateinit var viewModel: DatabaseViewModel
+    private val clockViewModel: ClockViewModel by viewModels {
+        ClockViewModelFactory(application, viewModel)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -94,58 +92,11 @@ class MainActivity : ComponentActivity() {
         }
         val ds = DataStoreUtils.getInstance(this)
         val db = buildDatabase<ClockDatabase>(useDeviceProtectedStorage = true)
-        val viewModel = DatabaseViewModel(db, Timer::class to db.timerDao(), Alarm::class to db.alarmDao())
+        viewModel = DatabaseViewModel(db, Timer::class to db.timerDao(), Alarm::class to db.alarmDao())
 
-        val initialRoute = when (intent.action) {
-            AlarmClock.ACTION_SET_ALARM -> {
-                val hour = intent.getIntExtra(AlarmClock.EXTRA_HOUR, -1).takeIf { it != -1 }
-                val minutes = intent.getIntExtra(AlarmClock.EXTRA_MINUTES, -1).takeIf { it != -1 }
-                val message = intent.getStringExtra(AlarmClock.EXTRA_MESSAGE)
-                val days = intent.getIntegerArrayListExtra(AlarmClock.EXTRA_DAYS)
-                val skipUi = intent.getBooleanExtra(AlarmClock.EXTRA_SKIP_UI, false)
-
-                if (skipUi && hour != null && minutes != null) {
-                    val time = LocalTime(hour, minutes)
-                    var daysMask = 0
-                    days?.forEach { day ->
-                        daysMask = daysMask or (1 shl (day - 1))
-                    }
-                    val alarm = Alarm(time, message ?: "", true, daysMask)
-                    CoroutineScope(Dispatchers.IO).launch {
-                        val id = viewModel.upsert(alarm)
-                        AlarmScheduler.get().schedule(this@MainActivity, alarm.copy(id = id))
-                    }
-                    null
-                } else {
-                    Route.NewAlarmDialog(hour, minutes, message, days, skipUi)
-                }
-            }
-            AlarmClock.ACTION_SET_TIMER -> {
-                val length = intent.getIntExtra(AlarmClock.EXTRA_LENGTH, -1).takeIf { it != -1 }
-                val message = intent.getStringExtra(AlarmClock.EXTRA_MESSAGE)
-                val skipUi = intent.getBooleanExtra(AlarmClock.EXTRA_SKIP_UI, false)
-
-                if (skipUi && length != null) {
-                    val timer = Timer(true, message ?: "", Clock.System.now(), length.seconds, length.seconds)
-                    CoroutineScope(Dispatchers.IO).launch {
-                        val id = viewModel.upsert(timer)
-                        sendTimerNotification(this@MainActivity, timer.copy(id = id), true)
-                    }
-                    null
-                } else {
-                    Route.NewTimerDialog(length, message)
-                }
-            }
-            AlarmClock.ACTION_SHOW_ALARMS -> Route.Alarm
-            else -> null
-        }
+        val initialRoute = clockViewModel.handleIncomingIntent(intent)
 
         setContent {
-            LaunchedEffect(Unit) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    readTimezones(this@MainActivity)
-                }
-            }
             DynamicTheme {
                 val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     arrayOf(Manifest.permission.POST_NOTIFICATIONS)
@@ -162,7 +113,7 @@ class MainActivity : ComponentActivity() {
                 if (!hasPermissions && permissions.isNotEmpty()) {
                     InitialPermissionsScreen(permissions) { hasPermissions = it }
                 } else {
-                    Navigation(ds, viewModel, initialRoute)
+                    Navigation(ds, viewModel, clockViewModel, initialRoute)
                 }
             }
         }
@@ -193,18 +144,6 @@ fun InitialPermissionsScreen(permissions: Array<String>, setHasPermissions: (Boo
             }
         }
     }
-}
-
-fun readTimezones(context: Context) {
-    citiesToTimezones =
-        context.assets.open("cities.csv").bufferedReader().readLines().drop(1).map {
-            it.split(",")
-        }.filter {
-            val pop = it[14].toDoubleOrNull()
-            pop != null && pop > 100000
-        }.associate {
-            it[1].replace("\"", "") to it[15]
-        }
 }
 
 @Serializable
@@ -242,23 +181,28 @@ fun mainPages() = listOf(
 )
 
 @Composable
-fun Navigation(ds: DataStoreUtils, viewModel: DatabaseViewModel, initialRoute: Route?) {
+fun Navigation(
+    ds: DataStoreUtils,
+    viewModel: DatabaseViewModel,
+    clockViewModel: ClockViewModel,
+    initialRoute: Route?,
+) {
     val backStack = rememberNavBackStack<Route>(listOfNotNull(Route.Alarm, initialRoute).distinct())
     MainNavigation(backStack) {
         entry<Route.Alarm> {
             AlarmPage(backStack, viewModel, initialRoute as? Route.NewAlarmDialog)
         }
         entry<Route.Clock> {
-            ClockPage(backStack, ds)
+            ClockPage(backStack, ds, clockViewModel)
         }
         entry<Route.Timer> {
-            TimerPage(backStack, viewModel)
+            TimerPage(backStack, viewModel, clockViewModel)
         }
         entry<Route.Stopwatch> {
-            StopwatchPage(backStack)
+            StopwatchPage(backStack, clockViewModel)
         }
         entry<Route.SelectTimeZonesDialog>(metadata = DialogPage()) {
-            SelectTimeZonesDialog(backStack, ds)
+            SelectTimeZonesDialog(backStack, ds, clockViewModel)
         }
         entry<Route.NewTimerDialog>(metadata = DialogPage()) { key ->
             NewTimerDialog(backStack, viewModel, key.lengthSeconds, key.message)

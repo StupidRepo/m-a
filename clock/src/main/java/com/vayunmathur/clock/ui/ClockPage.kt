@@ -29,12 +29,11 @@ import androidx.compose.ui.unit.dp
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.clock.R
 import com.vayunmathur.clock.Route
-import com.vayunmathur.clock.citiesToTimezones
 import com.vayunmathur.clock.mainPages
+import com.vayunmathur.clock.util.ClockViewModel
 import com.vayunmathur.library.ui.IconAdd
 import com.vayunmathur.library.util.BottomNavBar
 import com.vayunmathur.library.util.DataStoreUtils
-import com.vayunmathur.library.util.nowState
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
@@ -46,9 +45,10 @@ import kotlinx.datetime.toLocalDateTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ClockPage(backStack: NavBackStack<Route>, ds: DataStoreUtils) {
+fun ClockPage(backStack: NavBackStack<Route>, ds: DataStoreUtils, clockViewModel: ClockViewModel) {
     val context = LocalContext.current
-    val now by nowState()
+    val now by clockViewModel.now.collectAsState()
+    val cities by clockViewModel.cities.collectAsState()
     val time = now.toLocalDateTime(TimeZone.currentSystemDefault())
     val timeZones by ds.stringSetFlow("time_zones").collectAsState(setOf())
     Scaffold(topBar = {
@@ -98,7 +98,7 @@ fun ClockPage(backStack: NavBackStack<Route>, ds: DataStoreUtils) {
                 }))
             }
             items(timeZones.toList()) {city ->
-                val it = citiesToTimezones?.get(city) ?: return@items
+                val it = cities?.get(city) ?: return@items
                 val timeHere = now.toLocalDateTime(TimeZone.of(it))
                 val amPm = if(timeHere.time.hour >= 12) stringResource(R.string.time_pm) else stringResource(R.string.time_am)
                 Card {

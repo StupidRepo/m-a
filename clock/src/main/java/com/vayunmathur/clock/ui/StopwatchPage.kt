@@ -23,13 +23,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.retain.retain
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,24 +43,20 @@ import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.clock.R
 import com.vayunmathur.clock.Route
 import com.vayunmathur.clock.mainPages
+import com.vayunmathur.clock.util.ClockViewModel
 import com.vayunmathur.library.ui.IconPause
 import com.vayunmathur.library.ui.IconPlay
 import com.vayunmathur.library.util.BottomNavBar
-import com.vayunmathur.library.util.nowState
-import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StopwatchPage(backStack: NavBackStack<Route>) {
-    var isRunning by retain { mutableStateOf(false) }
-    var totalTime by retain { mutableStateOf(0.seconds) }
-    var startTime by retain { mutableStateOf(Clock.System.now()) }
-    val now by nowState()
-    val countingTime = if(isRunning) (now - startTime) + totalTime else totalTime
-    val lapTimes = retain { mutableStateListOf<Duration>() }
-    val lapSplits by remember {
+fun StopwatchPage(backStack: NavBackStack<Route>, clockViewModel: ClockViewModel) {
+    val isRunning by clockViewModel.stopwatchRunning.collectAsState()
+    val countingTime by clockViewModel.stopwatchCountingTime.collectAsState()
+    val lapTimes by clockViewModel.lapTimes.collectAsState()
+    val lapSplits by remember(lapTimes) {
         derivedStateOf {
             lapTimes.mapIndexed { index, totalTimeAtLap ->
                 if (index == 0) {
@@ -83,28 +76,20 @@ fun StopwatchPage(backStack: NavBackStack<Route>) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if(isRunning) {
                 FloatingActionButton({
-                    lapTimes += countingTime
-                    // add lap
+                    clockViewModel.addLap()
                 }) {
                     Icon(painterResource(R.drawable.outline_timer_24), null)
                 }
             }
             if(countingTime > 0.seconds) {
                 FloatingActionButton(onClick = {
-                    isRunning = false
-                    totalTime = 0.seconds
+                    clockViewModel.resetStopwatch()
                 }) {
                     Icon(painterResource(R.drawable.outline_restart_alt_24), null)
                 }
             }
             FloatingActionButton({
-                if(isRunning) {
-                    isRunning = false
-                    totalTime += Clock.System.now() - startTime
-                } else {
-                    isRunning = true
-                    startTime = Clock.System.now()
-                }
+                clockViewModel.toggleStopwatch()
             }) {
                 if(isRunning) {
                     IconPause()

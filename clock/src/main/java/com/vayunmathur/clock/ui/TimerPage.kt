@@ -57,6 +57,7 @@ import com.vayunmathur.clock.R
 import com.vayunmathur.clock.Route
 import com.vayunmathur.clock.data.Timer
 import com.vayunmathur.clock.mainPages
+import com.vayunmathur.clock.util.ClockViewModel
 import com.vayunmathur.clock.util.TimerReceiver
 import com.vayunmathur.library.ui.IconAdd
 import com.vayunmathur.library.ui.IconClose
@@ -66,7 +67,6 @@ import com.vayunmathur.library.ui.IconPlay
 import com.vayunmathur.library.util.BottomNavBar
 import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.NavBackStack
-import com.vayunmathur.library.util.nowState
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
@@ -76,8 +76,8 @@ import kotlin.time.Instant
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TimerPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
-    val now by nowState()
+fun TimerPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, clockViewModel: ClockViewModel) {
+    val now by clockViewModel.now.collectAsState()
     val timers by viewModel.data<Timer>().collectAsState(initial = emptyList())
     var isAddingTimer by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -125,7 +125,7 @@ fun TimerPage(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(timers, key = { it.id }) { timer ->
-                    TimerCard(timer, now, viewModel)
+                    TimerCard(timer, now, viewModel, clockViewModel)
                 }
             }
         }
@@ -284,16 +284,12 @@ fun ActionKeypadButton(text: String, modifier: Modifier = Modifier, onClick: () 
 }
 
 @Composable
-fun TimerCard(timer: Timer, now: Instant, viewModel: DatabaseViewModel) {
+fun TimerCard(timer: Timer, now: Instant, viewModel: DatabaseViewModel, clockViewModel: ClockViewModel) {
     val context = LocalContext.current
 
-    // Calculate actual remaining time for the UI
+    // Calculate actual remaining time for the UI via the shared VM helper.
     val realRemainingTime = remember(timer, now) {
-        if (timer.isRunning) {
-            timer.remainingLength - (now - timer.remainingStartTime)
-        } else {
-            timer.remainingLength
-        }.coerceAtLeast(0.seconds)
+        clockViewModel.timerRemaining(timer, now)
     }
 
     Card(
