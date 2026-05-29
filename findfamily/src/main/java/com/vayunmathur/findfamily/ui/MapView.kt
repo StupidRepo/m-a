@@ -32,7 +32,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -40,20 +39,15 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.vayunmathur.findfamily.R
 import com.vayunmathur.findfamily.data.Coord
-import com.vayunmathur.findfamily.data.RequestStatus
 import com.vayunmathur.findfamily.data.User
 import com.vayunmathur.findfamily.data.Waypoint
 import com.vayunmathur.findfamily.data.getLatestMap
 import com.vayunmathur.findfamily.data.radians
 import com.vayunmathur.findfamily.data.toPosition
-import com.vayunmathur.findfamily.util.Networking
 import com.vayunmathur.library.ui.invisibleClickable
 import com.vayunmathur.library.util.DatabaseViewModel
-import com.vayunmathur.library.util.NavBackStack
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.compose.camera.CameraState
@@ -67,7 +61,6 @@ import org.maplibre.spatialk.geojson.Position
 import kotlin.io.encoding.Base64
 import kotlin.math.abs
 import kotlin.math.cos
-import kotlin.time.Clock
 
 val camera = CameraState(CameraPosition())
 
@@ -84,30 +77,9 @@ fun MapView(
     selectedUser: SelectedUser? = null,
     selectedWaypoint: SelectedWaypoint? = null,
 ) {
-    val meLabel = stringResource(R.string.me_label)
     val users by viewModel.data<User>().collectAsState()
     val waypoints by viewModel.data<Waypoint>().collectAsState()
     val userPositions by remember { viewModel.getLatestMap() }.collectAsState(emptyMap())
-
-    LaunchedEffect(Unit) {
-        delay(1000)
-        if (users.none { it.id == Networking.userid }) {
-            withContext(Dispatchers.IO) {
-                viewModel.upsertAsync(
-                    User(
-                        meLabel,
-                        null,
-                        "Unnamed Location",
-                        true,
-                        RequestStatus.MUTUAL_CONNECTION,
-                        Clock.System.now(),
-                        null,
-                        Networking.userid
-                    )
-                )
-            }
-        }
-    }
 
     var initialized by remember { mutableStateOf(false) }
 

@@ -22,23 +22,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
 import com.vayunmathur.library.util.NavBackStack
-import com.vayunmathur.library.util.DatabaseViewModel
-import com.vayunmathur.findfamily.util.Networking
 import com.vayunmathur.findfamily.Route
 import com.vayunmathur.findfamily.R
-import com.vayunmathur.findfamily.data.TemporaryLink
-import dev.whyoleg.cryptography.algorithms.RSA
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlin.io.encoding.Base64
-import kotlin.time.Clock
+import com.vayunmathur.findfamily.util.FindFamilyViewModel
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 
 @Composable
-fun AddLinkDialog(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) {
+fun AddLinkDialog(backStack: NavBackStack<Route>, ffViewModel: FindFamilyViewModel) {
     var name by remember { mutableStateOf("") }
 
     val expiry15min = stringResource(R.string.expiry_15_minutes)
@@ -67,16 +59,7 @@ fun AddLinkDialog(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel) 
 
                 Button(
                     {
-                        CoroutineScope(Dispatchers.IO).launch {
-                            val keypair = Networking.generateKeyPair()
-
-                            val newLink = TemporaryLink(
-                                name,
-                                Base64.encode(keypair.privateKey.encodeToByteArray(RSA.PrivateKey.Format.PEM)),
-                                Base64.encode(keypair.publicKey.encodeToByteArray(RSA.PublicKey.Format.PEM)),
-                                Clock.System.now() + options[expiryTime]!!
-                            )
-                            viewModel.upsertAsync(newLink)
+                        ffViewModel.createTemporaryLink(name, options[expiryTime]!!) {
                             backStack.pop()
                         }
                     },

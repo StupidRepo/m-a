@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
 import com.vayunmathur.library.util.NavBackStack
+import com.vayunmathur.findfamily.util.FindFamilyViewModel
 import com.vayunmathur.findfamily.util.Networking
 import com.vayunmathur.findfamily.util.Platform
 import com.vayunmathur.findfamily.Route
@@ -36,7 +37,13 @@ import kotlin.math.pow
 import kotlin.time.Clock
 
 @Composable
-fun AddPersonDialog(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel, platform: Platform, id: Long?) {
+fun AddPersonDialog(
+    backStack: NavBackStack<Route>,
+    viewModel: DatabaseViewModel,
+    ffViewModel: FindFamilyViewModel,
+    platform: Platform,
+    id: Long?,
+) {
     val users by viewModel.data<User>().collectAsState()
     val usersByID = users.associateBy { it.id }
 
@@ -105,7 +112,7 @@ fun AddPersonDialog(backStack: NavBackStack<Route>, viewModel: DatabaseViewModel
                             null,
                             userid.decodeBase26()
                         )
-                        viewModel.upsertAsync(userToAdd) {
+                        ffViewModel.upsertUser(userToAdd) {
                             backStack.pop()
                         }
                     },

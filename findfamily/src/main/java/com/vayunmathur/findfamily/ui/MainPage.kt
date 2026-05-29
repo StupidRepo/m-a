@@ -25,7 +25,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.BottomAppBarDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,7 +32,6 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonMenu
 import androidx.compose.material3.FloatingActionButtonMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -68,7 +66,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vayunmathur.findfamily.R
 import com.vayunmathur.findfamily.Route
-import com.vayunmathur.findfamily.data.Coord
 import com.vayunmathur.findfamily.data.LocationValue
 import com.vayunmathur.findfamily.data.RequestStatus
 import com.vayunmathur.findfamily.data.TemporaryLink
@@ -77,6 +74,7 @@ import com.vayunmathur.findfamily.data.Waypoint
 import com.vayunmathur.findfamily.data.getLatestMap
 import com.vayunmathur.findfamily.data.toPosition
 import com.vayunmathur.findfamily.ui.dialogs.encodeBase26
+import com.vayunmathur.findfamily.util.FindFamilyViewModel
 import com.vayunmathur.findfamily.util.Networking
 import com.vayunmathur.findfamily.util.Platform
 import com.vayunmathur.library.ui.BackupButtons
@@ -92,9 +90,6 @@ import com.vayunmathur.library.util.DatabaseViewModel
 import com.vayunmathur.library.util.NavBackStack
 import com.vayunmathur.library.util.ResultEffect
 import com.vayunmathur.library.util.formatSpeed
-import kotlin.math.roundToInt
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
@@ -109,7 +104,6 @@ import kotlinx.datetime.format.MonthNames
 import kotlinx.datetime.format.Padding
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
-import org.maplibre.spatialk.geojson.Position
 import kotlin.time.Instant
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -118,35 +112,34 @@ fun MainPage(
     platform: Platform,
     backStack: NavBackStack<Route>,
     viewModel: DatabaseViewModel,
+    ffViewModel: FindFamilyViewModel,
     initialUserId: Long? = null,
     initialWaypointId: Long? = null
 ) {
-    var selectedUserId by remember(initialUserId) { mutableStateOf(initialUserId) }
-    var selectedWaypointId by remember(initialWaypointId) { mutableStateOf(initialWaypointId) }
+    // Mirror the original `remember(initialUserId)` behaviour: apply the
+    // navigation-supplied selection whenever it changes.
+    LaunchedEffect(initialUserId, initialWaypointId) {
+        ffViewModel.applyInitialSelection(initialUserId, initialWaypointId)
+    }
+
+    val selectedUserId by ffViewModel.selectedUserId.collectAsState()
+    val selectedWaypointId by ffViewModel.selectedWaypointId.collectAsState()
+    val isShowingPresent by ffViewModel.isShowingPresent.collectAsState()
+    val historicalPosition by ffViewModel.historicalPosition.collectAsState()
+
+    val waypointName by ffViewModel.waypointName.collectAsState()
+    val waypointRange by ffViewModel.waypointRange.collectAsState()
 
     BackHandler(selectedUserId != null || (selectedWaypointId != null && selectedWaypointId != 0L)) {
-        selectedUserId = null
-        selectedWaypointId = null
+        ffViewModel.clearSelection()
     }
 
     val users by viewModel.data<User>().collectAsState()
     val temporaryLinks by viewModel.data<TemporaryLink>().collectAsState()
     val waypoints by viewModel.data<Waypoint>().collectAsState()
-    val timestamp = Clock.System.now() - 7.days
     val userPositions by remember { viewModel.getLatestMap() }.collectAsState(emptyMap())
 
     val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        viewModel.deleteIf<LocationValue>("timestamp < ${timestamp.epochSeconds}")
-    }
-
-    var isShowingPresent by remember { mutableStateOf(true) }
-    var historicalPosition by remember { mutableStateOf<Position?>(null) }
-
-    var waypointName by remember { mutableStateOf("") }
-    var waypointRange by remember { mutableStateOf("") }
-    var waypointCoord by remember { mutableStateOf(Coord(0.0, 0.0)) }
 
     Scaffold(
         topBar = {
@@ -159,8 +152,7 @@ fun MainPage(
                 navigationIcon = {
                     if (selectedUserId != null || selectedWaypointId != null) {
                         IconNavigation {
-                            selectedUserId = null
-                            selectedWaypointId = null
+                            ffViewModel.clearSelection()
                         }
                     }
                 },
@@ -176,7 +168,7 @@ fun MainPage(
                             val user by viewModel.getState<User>(selectedUserId!!)
                             IconButton({
                                 viewModel.delete(user)
-                                selectedUserId = null
+                                ffViewModel.setSelectedUserId(null)
                             }) {
                                 IconDelete()
                             }
@@ -185,7 +177,7 @@ fun MainPage(
                         val waypoint by viewModel.getState<Waypoint>(selectedWaypointId!!)
                         IconButton({
                             viewModel.delete(waypoint)
-                            selectedWaypointId = null
+                            ffViewModel.setSelectedWaypointId(null)
                         }) {
                             IconDelete()
                         }
@@ -210,10 +202,7 @@ fun MainPage(
                         { Text(stringResource(R.string.fab_person)) },
                         { Icon(painterResource(R.drawable.outline_person_24), null) })
                     FloatingActionButtonMenuItem({
-                        selectedWaypointId = 0L
-                        waypointName = ""
-                        waypointRange = "100"
-                        waypointCoord = Coord(0.0, 0.0) // Will be updated by MapView
+                        ffViewModel.beginCreateWaypoint()
                     },
                         { Text(stringResource(R.string.fab_location)) },
                         { Icon(painterResource(R.drawable.outline_pin_drop_24), null) })
@@ -224,17 +213,8 @@ fun MainPage(
                         { Icon(painterResource(R.drawable.outline_link_24), null) })
                 }
             } else if (selectedWaypointId != null) {
-                val waypoint by viewModel.getState<Waypoint>(selectedWaypointId!!) { Waypoint.NEW_WAYPOINT }
                 FloatingActionButton({
-                    if (waypointRange.toDoubleOrNull() == null || waypointName.isBlank()) return@FloatingActionButton
-                    viewModel.upsertAsync(
-                        waypoint.copy(
-                            name = waypointName,
-                            range = waypointRange.toDouble(),
-                            coord = waypointCoord
-                        )
-                    )
-                    selectedWaypointId = null
+                    ffViewModel.saveCurrentWaypoint()
                 }) {
                     IconSave()
                 }
@@ -252,8 +232,7 @@ fun MainPage(
                     ) {
                         items(users.filter { it.requestStatus == RequestStatus.MUTUAL_CONNECTION || it.requestStatus == RequestStatus.AWAITING_RESPONSE }) {
                             UserCard(it, userPositions[it.id], true) {
-                                selectedUserId = it.id
-                                isShowingPresent = true
+                                ffViewModel.selectUser(it.id)
                             }
                         }
                         if (users.any { it.requestStatus == RequestStatus.AWAITING_REQUEST }) {
@@ -288,10 +267,7 @@ fun MainPage(
                         }
                         items(waypoints) {
                             WaypointCard(it, users) {
-                                selectedWaypointId = it.id
-                                waypointName = it.name
-                                waypointRange = it.range.toString()
-                                waypointCoord = it.coord
+                                ffViewModel.beginEditWaypoint(it)
                             }
                         }
                     }
@@ -333,7 +309,7 @@ fun MainPage(
                     Column(Modifier.padding(16.dp)) {
                         OutlinedTextField(
                             waypointName,
-                            { waypointName = it },
+                            { ffViewModel.setWaypointName(it) },
                             Modifier.fillMaxWidth(),
                             isError = waypointName.isBlank(),
                             supportingText = if (waypointName.isBlank()) {
@@ -343,7 +319,7 @@ fun MainPage(
                         Spacer(Modifier.heightIn(8.dp))
                         OutlinedTextField(
                             waypointRange,
-                            { waypointRange = it },
+                            { ffViewModel.setWaypointRange(it) },
                             Modifier.fillMaxWidth(),
                             suffix = { Text(stringResource(R.string.waypoint_range_suffix)) },
                             keyboardOptions = KeyboardOptions(
@@ -367,20 +343,17 @@ fun MainPage(
             val selectedWaypointObj = if (selectedWaypointId != null) {
                 val waypoint by viewModel.getState<Waypoint>(selectedWaypointId!!) { Waypoint.NEW_WAYPOINT }
                 SelectedWaypoint(waypoint, waypointRange.toDoubleOrNull() ?: 0.0) {
-                    waypointCoord = it
+                    ffViewModel.setWaypointCoord(it)
                 }
             } else null
 
             MapView(
                 viewModel,
                 onUserClick = {
-                    selectedUserId = it
-                    selectedWaypointId = null
-                    isShowingPresent = true
+                    ffViewModel.selectUser(it)
                 },
                 onMapClick = {
-                    selectedUserId = null
-                    selectedWaypointId = null
+                    ffViewModel.clearSelection()
                 },
                 selectedUser = selectedUserObj,
                 selectedWaypoint = selectedWaypointObj
@@ -390,10 +363,10 @@ fun MainPage(
                 HistoryBar(
                     backStack,
                     isShowingPresent,
-                    { isShowingPresent = it },
-                    viewModel,
+                    { ffViewModel.setShowingPresent(it) },
+                    ffViewModel,
                     selectedUserId!!
-                ) { historicalPosition = it }
+                ) { ffViewModel.setHistoricalPosition(it) }
             }
         }
     }
@@ -438,9 +411,9 @@ fun BoxScope.HistoryBar(
     backStack: NavBackStack<Route>,
     isShowingPresent: Boolean,
     setShowingPresent: (Boolean) -> Unit,
-    viewModel: DatabaseViewModel,
+    ffViewModel: FindFamilyViewModel,
     userid: Long,
-    setHistoricalPosition: (Position) -> Unit
+    setHistoricalPosition: (org.maplibre.spatialk.geojson.Position) -> Unit
 ) {
     Card(Modifier.width(105.dp).padding(2.dp).align(Alignment.BottomEnd)) {
         val colmod = if (isShowingPresent) Modifier else Modifier.fillMaxHeight(1f)
@@ -530,7 +503,7 @@ fun BoxScope.HistoryBar(
                 val simulatedTimestamp = pickedLocalDate.atTime(pickedLocalTime)
                     .toInstant(TimeZone.currentSystemDefault())
 
-                val locs by remember(userid) { viewModel.data<LocationValue>("userid = $userid") }.collectAsState()
+                val locs by ffViewModel.locationHistory.collectAsState()
 
                 if (locs.isNotEmpty()) {
                     val points = locs.map { it.timestamp to it.coord }

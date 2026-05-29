@@ -1,16 +1,13 @@
 package com.vayunmathur.findfamily
 
 import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
-import android.location.Geocoder
-import android.location.LocationManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -25,17 +22,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -62,42 +55,33 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
 import kotlin.time.Clock
+import com.vayunmathur.findfamily.util.FindFamilyViewModel
+import com.vayunmathur.findfamily.util.FindFamilyViewModelFactory
 import com.vayunmathur.findfamily.util.Platform
-import com.vayunmathur.findfamily.util.ensureSync
 
 class MainActivity : ComponentActivity() {
+    private lateinit var viewModel: DatabaseViewModel
+    private val ffViewModel: FindFamilyViewModel by viewModels {
+        FindFamilyViewModelFactory(application, viewModel)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val db = buildDatabase<FFDatabase>(listOf(Migration_1_2, Migration_2_3))
-        val viewModel = DatabaseViewModel(db, User::class to db.userDao(), Waypoint::class to db.waypointDao(), LocationValue::class to db.locationValueDao(), TemporaryLink::class to db.temporaryLinkDao())
+        viewModel = DatabaseViewModel(db, User::class to db.userDao(), Waypoint::class to db.waypointDao(), LocationValue::class to db.locationValueDao(), TemporaryLink::class to db.temporaryLinkDao())
         val platform = Platform(this)
         setContent {
             DynamicTheme {
-                val context = LocalContext.current
-                val foregroundPermission = Manifest.permission.ACCESS_FINE_LOCATION
-                val backgroundPermission = Manifest.permission.ACCESS_BACKGROUND_LOCATION
-
-                var hasForeground by remember {
-                    mutableStateOf(ContextCompat.checkSelfPermission(context, foregroundPermission) == PackageManager.PERMISSION_GRANTED)
-                }
-                var hasBackground by remember {
-                    mutableStateOf(ContextCompat.checkSelfPermission(context, backgroundPermission) == PackageManager.PERMISSION_GRANTED)
-                }
+                val hasForeground by ffViewModel.hasForeground.collectAsState()
+                val hasBackground by ffViewModel.hasBackground.collectAsState()
 
                 // Automatically re-check when returning from System Settings
                 val lifecycleOwner = LocalLifecycleOwner.current
                 DisposableEffect(lifecycleOwner) {
                     val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
-                            hasForeground = ContextCompat.checkSelfPermission(
-                                context,
-                                foregroundPermission
-                            ) == PackageManager.PERMISSION_GRANTED
-                            hasBackground = ContextCompat.checkSelfPermission(
-                                context,
-                                backgroundPermission
-                            ) == PackageManager.PERMISSION_GRANTED
+                            ffViewModel.refreshPermissions()
                         }
                     }
                     lifecycleOwner.lifecycle.addObserver(observer)
@@ -108,29 +92,14 @@ class MainActivity : ComponentActivity() {
                     NoPermissionsScreen(
                         hasForeground = hasForeground,
                         hasBackground = hasBackground,
-                        onForegroundGranted = { hasForeground = true },
-                        onBackgroundGranted = { hasBackground = true }
+                        onForegroundGranted = { ffViewModel.refreshPermissions() },
+                        onBackgroundGranted = { ffViewModel.refreshPermissions() }
                     )
                 } else {
-                    Main(platform, viewModel)
+                    Navigation(platform, viewModel, ffViewModel, ffViewModel.missingFeatures)
                 }
             }
         }
-    }
-
-    @Composable
-    fun Main(platform: Platform, viewModel: DatabaseViewModel) {
-        val context = LocalContext.current
-        val isNetworkEnabled = remember {
-            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-        }
-        val isGeocoderPresent = remember { Geocoder.isPresent() }
-
-        LaunchedEffect(Unit) {
-            ensureSync(this@MainActivity)
-        }
-        Navigation(platform, viewModel, !isNetworkEnabled || !isGeocoderPresent)
     }
 }
 
@@ -252,7 +221,12 @@ sealed interface Route: NavKey {
 }
 
 @Composable
-fun Navigation(platform: Platform, viewModel: DatabaseViewModel, showMissingFeatures: Boolean) {
+fun Navigation(
+    platform: Platform,
+    viewModel: DatabaseViewModel,
+    ffViewModel: FindFamilyViewModel,
+    showMissingFeatures: Boolean,
+) {
     val backStack = rememberNavBackStack<Route>(Route.MainPage())
 
     LaunchedEffect(showMissingFeatures) {
@@ -263,17 +237,17 @@ fun Navigation(platform: Platform, viewModel: DatabaseViewModel, showMissingFeat
 
     MainNavigation(backStack) {
         entry<Route.MainPage> {
-            MainPage(platform, backStack, viewModel, it.selectedUserId, it.selectedWaypointId)
+            MainPage(platform, backStack, viewModel, ffViewModel, it.selectedUserId, it.selectedWaypointId)
         }
         entry<Route.UserPageHistoryDatePicker>(metadata = DialogPage()) {
             DatePickerDialog(backStack, "HistoryDatePicker", it.initialDate, maxDate = Clock.System.now().toLocalDateTime(
                 TimeZone.currentSystemDefault()).date)
         }
         entry<Route.AddPersonDialog>(metadata = DialogPage()) {
-            AddPersonDialog(backStack, viewModel, platform, it.id)
+            AddPersonDialog(backStack, viewModel, ffViewModel, platform, it.id)
         }
         entry<Route.AddLinkDialog>(metadata = DialogPage()) {
-            AddLinkDialog(backStack, viewModel)
+            AddLinkDialog(backStack, ffViewModel)
         }
         entry<Route.MissingFeaturesDialog>(metadata = DialogPage()) {
             MissingFeaturesDialog(backStack)
