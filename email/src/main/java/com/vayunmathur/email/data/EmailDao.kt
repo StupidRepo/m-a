@@ -5,6 +5,7 @@ import com.vayunmathur.email.Attachment
 import com.vayunmathur.email.EmailAccount
 import com.vayunmathur.email.EmailFolder
 import com.vayunmathur.email.EmailMessage
+import com.vayunmathur.email.OutboxEntry
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -73,4 +74,24 @@ interface EmailDao {
 
     @Query("UPDATE EmailMessage SET isRead = :isRead WHERE accountEmail = :accountEmail AND id IN (:uids)")
     suspend fun updateBulkReadStatus(accountEmail: String, uids: List<Long>, isRead: Boolean)
+
+    // ---- Outbox ----
+
+    @Query("SELECT * FROM OutboxEntry ORDER BY createdAt ASC")
+    fun getOutboxFlow(): Flow<List<OutboxEntry>>
+
+    @Query("SELECT * FROM OutboxEntry ORDER BY createdAt ASC")
+    suspend fun getOutbox(): List<OutboxEntry>
+
+    @Query("SELECT COUNT(*) FROM OutboxEntry")
+    suspend fun getOutboxCount(): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOutboxEntry(entry: OutboxEntry): Long
+
+    @Delete
+    suspend fun deleteOutboxEntry(entry: OutboxEntry)
+
+    @Query("UPDATE OutboxEntry SET lastError = :error, attemptCount = :attempts, lastAttemptAt = :at WHERE id = :id")
+    suspend fun updateOutboxAttempt(id: Long, error: String?, attempts: Int, at: Long)
 }

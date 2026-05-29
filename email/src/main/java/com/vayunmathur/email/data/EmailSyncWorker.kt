@@ -14,7 +14,8 @@ class EmailSyncWorker(appContext: Context, workerParams: WorkerParameters) :
     override suspend fun doWork(): Result {
         val db = EmailDatabase.getInstance(applicationContext)
         val dao = db.emailDao()
-        val accounts = dao.getAccounts()
+        // Mutable so we can swap in a refreshed account on auth failure.
+        val accounts = dao.getAccounts().toMutableList()
 
         if (accounts.isEmpty()) {
             Log.d("EmailSync", "No accounts to sync")
@@ -24,14 +25,26 @@ class EmailSyncWorker(appContext: Context, workerParams: WorkerParameters) :
         val manager = EmailManager()
         var hasErrors = false
 
-        for (account in accounts) {
+        for ((i, original) in accounts.withIndex()) {
+            // `account` may be replaced with a refreshed copy below.
+            var account = original
             try {
                 Log.d("EmailSync", ">>> Starting sync for account: ${account.email}")
-                val auth = EmailManager.AuthType.OAuth2(account.accessToken)
+                var auth = EmailManager.AuthType.OAuth2(account.accessToken)
 
-                // 1. Sync Folders
+                // 1. Sync Folders (with one token-refresh retry on auth failure).
                 Log.d("EmailSync", "Fetching folders for ${account.email}...")
-                val folders = manager.fetchFolders("imap.gmail.com", account.email, auth)
+                val folders = try {
+                    manager.fetchFolders("imap.gmail.com", account.email, auth)
+                } catch (e: javax.mail.AuthenticationFailedException) {
+                    Log.d("EmailSync", "Auth failed for ${account.email}; refreshing token")
+                    val refreshed = TokenRefresher.refresh(applicationContext, account)
+                        ?: throw e
+                    account = refreshed
+                    accounts[i] = refreshed
+                    auth = EmailManager.AuthType.OAuth2(refreshed.accessToken)
+                    manager.fetchFolders("imap.gmail.com", refreshed.email, auth)
+                }
                 dao.insertFolders(folders)
                 Log.d("EmailSync", "Successfully synced ${folders.size} folders.")
 

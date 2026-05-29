@@ -51,13 +51,16 @@ import java.security.SecureRandom
 class MainActivity : ComponentActivity() {
     private val scope = CoroutineScope(Dispatchers.Main)
 
-    private val clientId = "827025129169-1ihnv9r1a8nd1i3qjs98tkvluo4vjbhe.apps.googleusercontent.com"
-    private val redirectUri = "com.googleusercontent.apps.827025129169-1ihnv9r1a8nd1i3qjs98tkvluo4vjbhe:/oauth2redirect"
+    private val clientId = "827025129169-kgv8s8dvhd7req7ao2ila1j169r068pp.apps.googleusercontent.com"
+    private val redirectUri = "com.googleusercontent.apps.827025129169-kgv8s8dvhd7req7ao2ila1j169r068pp:/oauth2redirect"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         handleIntent(intent)
+        // Wake the outbox sender on every cold start: if the process was killed
+        // between scheduled retries, this is what gets it going again.
+        com.vayunmathur.email.data.OutboxSendWorker.runNow(this)
         enableEdgeToEdge()
         setContent {
             val viewModel: EmailViewModel = viewModel()
@@ -77,7 +80,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         val data = intent?.data
-        val expectedScheme = "com.googleusercontent.apps.827025129169-1ihnv9r1a8nd1i3qjs98tkvluo4vjbhe"
+        val expectedScheme = "com.googleusercontent.apps.827025129169-kgv8s8dvhd7req7ao2ila1j169r068pp"
         
         val accountEmail = intent?.getStringExtra("accountEmail")
         val threadId = intent?.getStringExtra("threadId")
@@ -261,6 +264,8 @@ sealed interface Route : NavKey {
         val inReplyTo: String? = null,
         val references: String? = null
     ) : Route
+    @Serializable
+    object Outbox : Route
 }
 
 @Composable
@@ -268,12 +273,13 @@ fun EmailApp(viewModel: EmailViewModel, onAddAccount: () -> Unit) {
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val context = LocalContext.current
-    
+
     val accounts by viewModel.accounts.collectAsState(emptyList())
     val selectedAccountEmail by viewModel.selectedAccountEmail.collectAsState()
     val folders by viewModel.folders.collectAsState(emptyList())
     val selectedFolderName by viewModel.selectedFolderName.collectAsState()
-    
+    val outbox by viewModel.outbox.collectAsState(emptyList())
+
     val backStack = rememberNavBackStack<Route>(Route.MessageList)
 
     val navigationRoute = IntentState.navigationRoute
@@ -347,7 +353,24 @@ fun EmailApp(viewModel: EmailViewModel, onAddAccount: () -> Unit) {
                         scope.launch { drawerState.close() }
                     }
                 }
-                
+
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                NavigationDrawerItem(
+                    label = {
+                        Text(
+                            if (outbox.isEmpty()) "Outbox"
+                            else "Outbox (${outbox.size})"
+                        )
+                    },
+                    selected = false,
+                    onClick = {
+                        backStack.add(Route.Outbox)
+                        scope.launch { drawerState.close() }
+                    },
+                    icon = { IconSend() },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+
                 Spacer(Modifier.weight(1f))
                 NavigationDrawerItem(
                     label = { Text("Logout Current Account") },
@@ -394,6 +417,12 @@ fun EmailApp(viewModel: EmailViewModel, onAddAccount: () -> Unit) {
                     initialBody = route.body,
                     inReplyTo = route.inReplyTo,
                     references = route.references,
+                    onBack = { backStack.pop() }
+                )
+            }
+            entry<Route.Outbox>(metadata = ListDetailPage()) {
+                OutboxScreen(
+                    viewModel = viewModel,
                     onBack = { backStack.pop() }
                 )
             }
@@ -888,10 +917,11 @@ fun ComposerScreen(
     initialBody: String = "",
     inReplyTo: String? = null,
     references: String? = null,
-    onBack: () -> Unit
+    onBack: () -> Unit,
 ) {
     val accounts by viewModel.accounts.collectAsState(emptyList())
     val selectedAccount by viewModel.selectedAccount.collectAsState()
+    val context = LocalContext.current
     
     var fromAccount by remember(selectedAccount, accounts) { 
         mutableStateOf(selectedAccount ?: accounts.firstOrNull()) 
@@ -931,9 +961,16 @@ fun ComposerScreen(
                             references = references, 
                             onSuccess = {
                                 sending = false
+                                android.widget.Toast.makeText(context, "Message sent", android.widget.Toast.LENGTH_SHORT).show()
                                 onBack()
-                            }, 
-                            onError = { sending = false }
+                            },
+                            onError = { err ->
+                                sending = false
+                                // ViewModel has already queued the message to the outbox;
+                                // surface the underlying error so the user knows it'll retry.
+                                android.widget.Toast.makeText(context, "Saved to Outbox: $err", android.widget.Toast.LENGTH_LONG).show()
+                                onBack()
+                            }
                         )
                     }, enabled = !sending && fromAccount != null) {
                         if (sending) CircularProgressIndicator(modifier = Modifier.size(24.dp))
@@ -984,6 +1021,116 @@ fun ComposerScreen(
                     Text(uri.toString(), style = MaterialTheme.typography.bodySmall)
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun OutboxScreen(
+    viewModel: EmailViewModel,
+    onBack: () -> Unit,
+) {
+    val outbox by viewModel.outbox.collectAsState(emptyList())
+    val context = LocalContext.current
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Outbox") },
+                navigationIcon = { IconNavigation(onBack) },
+                actions = {
+                    if (outbox.isNotEmpty()) {
+                        TextButton(onClick = {
+                            viewModel.sendOutboxNow(context)
+                            android.widget.Toast.makeText(context, "Retrying ${outbox.size} pending message(s)…", android.widget.Toast.LENGTH_SHORT).show()
+                        }) { Text("Send now") }
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        if (outbox.isEmpty()) {
+            Box(
+                Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "Outbox is empty",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+            ) {
+                items(outbox, key = { it.id }) { entry ->
+                    OutboxRow(
+                        entry = entry,
+                        onDelete = {
+                            viewModel.deleteOutboxEntry(entry)
+                            android.widget.Toast.makeText(context, "Deleted from Outbox", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OutboxRow(entry: OutboxEntry, onDelete: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    entry.subject.ifBlank { "(no subject)" },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "From ${entry.accountEmail}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "To ${entry.to}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onDelete) { IconDelete() }
+        }
+        if (entry.body.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                entry.body.lineSequence().firstOrNull().orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+            )
+        }
+        if (entry.lastError != null || entry.attemptCount > 0) {
+            Spacer(Modifier.height(8.dp))
+            val statusColor =
+                if (entry.lastError != null) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.primary
+            Text(
+                buildString {
+                    if (entry.lastError != null) append("Failed: ${entry.lastError}")
+                    if (entry.attemptCount > 0) {
+                        if (isNotEmpty()) append(" · ")
+                        append("${entry.attemptCount} attempt(s)")
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = statusColor,
+            )
         }
     }
 }

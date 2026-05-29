@@ -33,7 +33,7 @@ class EmailManager {
         if (auth is AuthType.OAuth2) {
             properties["mail.imaps.auth.mechanisms"] = "XOAUTH2"
         }
-        return Session.getInstance(properties)
+        return Session.getInstance(properties).also { registerProviders(it) }
     }
 
     private fun getSmtpSession(auth: AuthType, host: String): Session {
@@ -47,7 +47,29 @@ class EmailManager {
         if (auth is AuthType.OAuth2) {
             properties["mail.smtps.auth.mechanisms"] = "XOAUTH2"
         }
-        return Session.getInstance(properties)
+        return Session.getInstance(properties).also { registerProviders(it) }
+    }
+
+    /**
+     * Explicitly register JavaMail's bundled providers.
+     *
+     * On Android (and especially in shrunk APKs with multidex), JavaMail's
+     * default discovery mechanism — which reads `META-INF/javamail.providers`
+     * and uses ServiceLoader — does not reliably find providers, leading to
+     * `NoSuchProviderException("smtps")` / `NoSuchProviderException("imaps")`.
+     * Calling `session.setProvider(...)` ahead of `getTransport` / `getStore`
+     * avoids the discovery step entirely.
+     */
+    private fun registerProviders(session: Session) {
+        try {
+            session.setProvider(Provider(Provider.Type.STORE, "imap", "com.sun.mail.imap.IMAPStore", "Oracle", ""))
+            session.setProvider(Provider(Provider.Type.STORE, "imaps", "com.sun.mail.imap.IMAPSSLStore", "Oracle", ""))
+            session.setProvider(Provider(Provider.Type.TRANSPORT, "smtp", "com.sun.mail.smtp.SMTPTransport", "Oracle", ""))
+            session.setProvider(Provider(Provider.Type.TRANSPORT, "smtps", "com.sun.mail.smtp.SMTPSSLTransport", "Oracle", ""))
+            android.util.Log.d("EmailManager", "Providers registered: ${session.providers.joinToString { it.protocol }}")
+        } catch (t: Throwable) {
+            android.util.Log.e("EmailManager", "registerProviders failed: ${t.javaClass.simpleName}: ${t.message}", t)
+        }
     }
 
     private suspend fun <T> withStore(host: String, user: String, auth: AuthType, block: suspend (Store) -> T): T = withContext(Dispatchers.IO) {

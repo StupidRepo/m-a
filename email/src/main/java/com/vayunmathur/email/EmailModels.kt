@@ -82,3 +82,26 @@ data class EmailAccount(
         return colors[Math.abs(hash) % colors.size]
     }
 }
+
+/// Pending outgoing message stored locally until it is successfully sent by the
+/// background sender. Attachments are copied to app-private storage at queue time
+/// (the original `content://` URIs aren't reliably readable across process
+/// restarts) and `attachmentLocalPaths` is a JSON-encoded `List<String>` of those
+/// absolute file paths.
+@Serializable
+@Entity
+data class OutboxEntry(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val accountEmail: String,
+    val to: String,
+    val cc: String? = null,
+    val subject: String,
+    val body: String,
+    val attachmentLocalPaths: String = "[]",
+    val inReplyTo: String? = null,
+    val references: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val lastError: String? = null,
+    val attemptCount: Int = 0,
+    val lastAttemptAt: Long = 0
+)
